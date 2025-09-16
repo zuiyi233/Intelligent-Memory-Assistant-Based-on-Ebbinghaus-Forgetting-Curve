@@ -5,6 +5,9 @@ import GoogleProvider from "next-auth/providers/google"
 import { prisma } from "./db"
 import bcrypt from "bcryptjs"
 
+// 添加日志以验证 NEXTAUTH_URL 环境变量
+console.log("NextAuth 配置 - NEXTAUTH_URL:", process.env.NEXTAUTH_URL);
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: {
@@ -61,7 +64,7 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user }: any) {
       if (user) {
         return {
           ...token,
@@ -71,7 +74,7 @@ export const authOptions: NextAuthOptions = {
       }
       return token
     },
-    async session({ session, token }) {
+    async session({ session, token }: any) {
       return {
         ...session,
         user: {
@@ -83,4 +86,54 @@ export const authOptions: NextAuthOptions = {
       }
     },
   },
+}
+
+// 注册新用户
+export async function registerUser(email: string, username: string, password: string, name?: string) {
+  try {
+    // 检查邮箱是否已存在
+    const existingUserByEmail = await prisma.user.findUnique({
+      where: { email }
+    })
+    
+    if (existingUserByEmail) {
+      throw new Error('该邮箱已被注册')
+    }
+    
+    // 检查用户名是否已存在
+    const existingUserByUsername = await prisma.user.findUnique({
+      where: { username }
+    })
+    
+    if (existingUserByUsername) {
+      throw new Error('该用户名已被使用')
+    }
+    
+    // 哈希密码
+    const hashedPassword = await bcrypt.hash(password, 12)
+    
+    // 创建用户
+    const user = await prisma.user.create({
+      data: {
+        email,
+        username,
+        password: hashedPassword,
+        name: name || username
+      }
+    })
+    
+    // 创建游戏化资料
+    await prisma.gamificationProfile.create({
+      data: {
+        userId: user.id
+      }
+    })
+    
+    // 返回不包含密码的用户信息
+    const { password: _, ...userWithoutPassword } = user
+    return userWithoutPassword
+  } catch (error) {
+    console.error('注册用户失败:', error)
+    throw error
+  }
 }

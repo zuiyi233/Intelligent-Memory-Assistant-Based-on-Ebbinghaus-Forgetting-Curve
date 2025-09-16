@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { AuthProvidersWrapper } from "@/components/providers/AuthProvidersWrapper";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -22,7 +23,11 @@ export const metadata: Metadata = {
     title: "记忆助手 - 智能记忆辅助工具",
     description: "基于艾宾浩斯遗忘曲线的科学记忆工具",
   },
-  viewport: "width=device-width, initial-scale=1",
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
@@ -33,9 +38,11 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`}>
-        <div className="min-h-screen bg-background">
-          {children}
-        </div>
+        <AuthProvidersWrapper>
+          <div className="min-h-screen bg-background">
+            {children}
+          </div>
+        </AuthProvidersWrapper>
       </body>
     </html>
   );

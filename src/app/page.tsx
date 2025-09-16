@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { Brain, BookOpen, BarChart3, Users, Star } from "lucide-react";
+import { Navigation } from "@/components/layout/Navigation";
 
 export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+      <Navigation />
       {/* Hero Section */}
       <section className="relative overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">

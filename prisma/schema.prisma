@@ -27,6 +27,13 @@ model User {
   memoryContents MemoryContent[]
   activationCodes ActivationCode[]
   reviews        Review[]
+  gamificationProfile GamificationProfile?
+  points         Point[]
+  userChallenges UserChallenge[]
+  userAchievements UserAchievement[] @relation("UserAchievementsUser")
+  pointTransactions PointTransaction[] @relation("PointTransactionsUser")
+  userDailyChallenges UserDailyChallenge[] @relation("UserDailyChallengesUser")
+  leaderboardEntries LeaderboardEntry[] @relation("LeaderboardEntriesUser")
   
   @@map("users")
 }
@@ -110,4 +117,249 @@ enum MemoryStatus {
   COMPLETED
   PAUSED
   ARCHIVED
+}
+
+// 游戏化相关模型
+// 游戏化资料模型
+model GamificationProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  level     Int      @default(1) // 用户等级
+  points    Int      @default(0) // 积分
+  experience Int     @default(0) // 经验值
+  streak    Int      @default(0) // 连续学习天数
+  lastActiveAt DateTime @default(now()) // 最后活跃时间
+  
+  // 关联关系
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievements UserAchievement[] @relation("UserAchievementsProfile")
+  pointTransactions PointTransaction[] @relation("PointTransactionsProfile")
+  dailyChallenges UserDailyChallenge[] @relation("UserDailyChallengesProfile")
+  leaderboardEntries LeaderboardEntry[] @relation("LeaderboardEntriesProfile")
+  
+  @@map("gamification_profiles")
+}
+
+// 成就模型
+model Achievement {
+  id          String           @id @default(cuid())
+  name        String           // 成就名称
+  description String           // 成就描述
+  icon        String?          // 成就图标
+  category    String           // 成就类别
+  type        AchievementType  // 成就类型
+  points      Int              @default(0) // 获得的积分
+  condition   String           // 获得条件描述
+  isActive    Boolean          @default(true)
+  
+  // 关联关系
+  userAchievements UserAchievement[] @relation("UserAchievementsAchievement")
+  
+  @@map("achievements")
+}
+
+// 用户成就模型
+model UserAchievement {
+  id            String      @id @default(cuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime    @default(now())
+  progress      Int         @default(0) // 成就进度 (0-100)
+  
+  // 关联关系
+  user        User        @relation("UserAchievementsUser", fields: [userId], references: [id], onDelete: Cascade, map: "user_achievements_user_id_fkey")
+  achievement Achievement @relation("UserAchievementsAchievement", fields: [achievementId], references: [id], onDelete: Cascade, map: "user_achievements_achievement_id_fkey")
+  profile     GamificationProfile @relation("UserAchievementsProfile", fields: [userId], references: [userId], onDelete: Cascade, map: "user_achievements_profile_id_fkey")
+  
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
+
+// 积分交易模型
+model PointTransaction {
+  id          String            @id @default(cuid())
+  userId      String
+  amount      Int               // 积分变化量 (正数为增加，负数为减少)
+  type        PointTransactionType // 交易类型
+  description String            // 交易描述
+  createdAt   DateTime          @default(now())
+  
+  // 关联关系
+  user    User               @relation("PointTransactionsUser", fields: [userId], references: [id], onDelete: Cascade, map: "point_transactions_user_id_fkey")
+  profile GamificationProfile @relation("PointTransactionsProfile", fields: [userId], references: [userId], onDelete: Cascade, map: "point_transactions_profile_id_fkey")
+  
+  @@map("point_transactions")
+}
+
+// 每日挑战模型
+model DailyChallenge {
+  id          String      @id @default(cuid())
+  title       String      // 挑战标题
+  description String      // 挑战描述
+  type        ChallengeType // 挑战类型
+  target      Int         // 目标值
+  points      Int         @default(0) // 完成获得的积分
+  isActive    Boolean     @default(true)
+  date        DateTime    @default(now()) // 挑战日期
+  
+  // 关联关系
+  userChallenges UserDailyChallenge[] @relation("UserDailyChallengesChallenge")
+  
+  @@map("daily_challenges")
+}
+
+// 用户每日挑战模型
+model UserDailyChallenge {
+  id           String         @id @default(cuid())
+  userId       String
+  challengeId  String
+  progress     Int            @default(0) // 当前进度
+  completed    Boolean        @default(false)
+  completedAt  DateTime?
+  claimed      Boolean        @default(false) // 是否已领取奖励
+  
+  // 关联关系
+  user      User              @relation("UserDailyChallengesUser", fields: [userId], references: [id], onDelete: Cascade, map: "user_daily_challenges_user_id_fkey")
+  challenge DailyChallenge    @relation("UserDailyChallengesChallenge", fields: [challengeId], references: [id], onDelete: Cascade, map: "user_daily_challenges_challenge_id_fkey")
+  profile   GamificationProfile @relation("UserDailyChallengesProfile", fields: [userId], references: [userId], onDelete: Cascade, map: "user_daily_challenges_profile_id_fkey")
+  
+  @@unique([userId, challengeId])
+  @@map("user_daily_challenges")
+}
+
+// 排行榜模型
+model Leaderboard {
+  id          String          @id @default(cuid())
+  name        String          // 排行榜名称
+  type        LeaderboardType // 排行榜类型
+  period      LeaderboardPeriod // 排行榜周期
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  
+  // 关联关系
+  entries LeaderboardEntry[] @relation("LeaderboardEntriesLeaderboard")
+  
+  @@map("leaderboards")
+}
+
+// 排行榜条目模型
+model LeaderboardEntry {
+  id           String      @id @default(cuid())
+  leaderboardId String
+  userId       String
+  rank         Int         // 排名
+  score        Int         // 分数
+  periodStart  DateTime    // 周期开始时间
+  periodEnd    DateTime    // 周期结束时间
+  createdAt    DateTime    @default(now())
+  
+  // 关联关系
+  leaderboard Leaderboard          @relation("LeaderboardEntriesLeaderboard", fields: [leaderboardId], references: [id], onDelete: Cascade, map: "leaderboard_entries_leaderboard_id_fkey")
+  user        User                 @relation("LeaderboardEntriesUser", fields: [userId], references: [id], onDelete: Cascade, map: "leaderboard_entries_user_id_fkey")
+  profile     GamificationProfile  @relation("LeaderboardEntriesProfile", fields: [userId], references: [userId], onDelete: Cascade, map: "leaderboard_entries_profile_id_fkey")
+  
+  @@unique([leaderboardId, userId])
+  @@map("leaderboard_entries")
+}
+
+// 积分模型
+model Point {
+  id        String    @id @default(cuid())
+  userId    String
+  amount    Int       // 积分数量
+  type      PointType // 积分类型
+  source    String?   // 积分来源
+  createdAt DateTime  @default(now())
+  
+  // 关联关系
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("points")
+}
+
+// 挑战模型
+model Challenge {
+  id          String        @id @default(cuid())
+  title       String        // 挑战标题
+  description String        // 挑战描述
+  type        ChallengeType // 挑战类型
+  target      Int           // 目标值
+  points      Int           @default(0) // 完成获得的积分
+  startDate   DateTime      // 开始时间
+  endDate     DateTime?     // 结束时间
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  
+  // 关联关系
+  userChallenges UserChallenge[]
+  
+  @@map("challenges")
+}
+
+// 用户挑战模型
+model UserChallenge {
+  id           String      @id @default(cuid())
+  userId       String
+  challengeId  String
+  progress     Int         @default(0) // 当前进度
+  completed    Boolean     @default(false)
+  completedAt  DateTime?
+  claimed      Boolean     @default(false) // 是否已领取奖励
+  createdAt    DateTime    @default(now())
+  
+  // 关联关系
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge Challenge   @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, challengeId])
+  @@map("user_challenges")
+}
+
+// 游戏化相关枚举
+enum PointTransactionType {
+  REVIEW_COMPLETED  // 完成复习
+  CHALLENGE_COMPLETED // 完成挑战
+  ACHIEVEMENT_UNLOCKED // 解锁成就
+  STREAK_BONUS      // 连续学习奖励
+  LEVEL_UP         // 升级奖励
+  MANUAL_ADJUST    // 手动调整
+}
+
+enum ChallengeType {
+  REVIEW_COUNT    // 复习次数
+  REVIEW_ACCURACY // 复习准确率
+  MEMORY_CREATED  // 创建记忆内容
+  STREAK_DAYS     // 连续学习天数
+  CATEGORY_FOCUS  // 特定类别复习
+}
+
+enum LeaderboardType {
+  POINTS         // 积分榜
+  LEVEL          // 等级榜
+  STREAK         // 连续学习榜
+  REVIEW_COUNT   // 复习次数榜
+  ACCURACY       // 准确率榜
+}
+
+enum LeaderboardPeriod {
+  DAILY          // 每日
+  WEEKLY         // 每周
+  MONTHLY        // 每月
+  ALL_TIME       // 总榜
+}
+
+// 新增游戏化相关枚举
+enum AchievementType {
+  MILESTONE      // 里程碑成就
+  PROGRESS       // 进度成就
+  SPECIAL        // 特殊成就
+  HIDDEN         // 隐藏成就
+}
+
+enum PointType {
+  EARNED         // 获得的积分
+  SPENT          // 消费的积分
+  BONUS          // 奖励积分
+  PENALTY        // 惩罚积分
 }

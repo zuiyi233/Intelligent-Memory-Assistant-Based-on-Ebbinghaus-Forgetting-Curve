@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect } from "react";
 import {
   LineChart,
@@ -15,6 +17,8 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  Label,
+  LabelList,
 } from "recharts";
 import { MemoryItem, Category } from "@/types";
 import { storageManager } from "@/utils/storage";
@@ -37,7 +41,7 @@ interface CategoryStats {
   name: string;
   count: number;
   averageRetention: number;
-  color: string;
+  color: string | undefined;
 }
 
 export function AnalyticsDashboard({ items, categories }: DashboardProps) {
@@ -279,7 +283,6 @@ export function AnalyticsDashboard({ items, categories }: DashboardProps) {
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                 outerRadius={80}
                 fill="#8884d8"
                 dataKey="count"
@@ -287,6 +290,7 @@ export function AnalyticsDashboard({ items, categories }: DashboardProps) {
                 {categoryStats.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color || COLORS[index % COLORS.length]} />
                 ))}
+                <LabelList dataKey="name" position="outside" />
               </Pie>
               <Tooltip />
             </PieChart>

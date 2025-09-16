@@ -1,4 +1,26 @@
-import { User, MemoryContent, Review, ActivationCode } from "@prisma/client"
+import {
+  User,
+  MemoryContent,
+  Review,
+  ActivationCode,
+  GamificationProfile,
+  Achievement,
+  UserAchievement,
+  PointTransaction,
+  DailyChallenge,
+  UserDailyChallenge,
+  Leaderboard,
+  LeaderboardEntry,
+  PointTransactionType,
+  ChallengeType,
+  LeaderboardType,
+  LeaderboardPeriod,
+  Point,
+  Challenge,
+  UserChallenge,
+  AchievementType,
+  PointType
+} from "@prisma/client"
 
 // 扩展用户类型
 export type UserWithAuth = User & {
@@ -160,3 +182,153 @@ export type Theme = "light" | "dark" | "system"
 
 // 语言类型
 export type Language = "zh-CN" | "en-US" | "ja-JP"
+
+// 游戏化相关类型
+export type GamificationProfileWithDetails = GamificationProfile & {
+  user: User
+  achievements: (UserAchievement & {
+    achievement: Achievement
+  })[]
+  pointTransactions: PointTransaction[]
+  dailyChallenges: (UserDailyChallenge & {
+    challenge: DailyChallenge
+  })[]
+}
+
+export type DailyChallengeWithDetails = DailyChallenge & {
+  userChallenges: UserDailyChallenge[]
+}
+
+export type UserDailyChallengeWithDetails = UserDailyChallenge & {
+  user: User
+  challenge: DailyChallenge
+  profile: GamificationProfile
+}
+
+export type LeaderboardEntryWithDetails = LeaderboardEntry & {
+  leaderboard: Leaderboard
+  user: User
+  profile: GamificationProfile
+}
+
+export type LeaderboardWithDetails = Leaderboard & {
+  entries: LeaderboardEntryWithDetails[]
+}
+
+export type AchievementWithDetails = Achievement & {
+  userAchievements: UserAchievement[]
+}
+
+export type UserAchievementWithDetails = UserAchievement & {
+  user: User
+  achievement: Achievement
+  profile: GamificationProfile
+}
+
+// 游戏化数据统计类型
+export interface GamificationStats {
+  totalUsers: number
+  totalPoints: number
+  averageLevel: number
+  averageStreak: number
+  topUsers: {
+    userId: string
+    username: string
+    points: number
+    level: number
+  }[]
+}
+
+// 游戏化配置类型
+export interface GamificationConfig {
+  pointsPerReview: number
+  pointsPerMemory: number
+  streakBonusMultiplier: number
+  levelUpBonus: number
+  achievementBonus: number
+  challengeCompletionBonus: number
+}
+
+// 游戏化事件类型
+export interface GamificationEvent {
+  type: 'REVIEW_COMPLETED' | 'MEMORY_CREATED' | 'STREAK_UPDATED' | 'LEVEL_UP' | 'ACHIEVEMENT_UNLOCKED' | 'CHALLENGE_COMPLETED'
+  userId: string
+  data?: Record<string, unknown>
+  timestamp: Date
+}
+
+// 游戏化通知类型
+export interface GamificationNotification {
+  id: string
+  type: 'ACHIEVEMENT_UNLOCKED' | 'LEVEL_UP' | 'CHALLENGE_COMPLETED' | 'STREAK_BONUS' | 'POINTS_EARNED'
+  title: string
+  message: string
+  data?: Record<string, unknown>
+  read: boolean
+  createdAt: Date
+}
+
+// 新增游戏化相关类型
+export type PointWithDetails = Point & {
+  user: User
+}
+
+export type ChallengeWithDetails = Challenge & {
+  userChallenges: UserChallenge[]
+}
+
+export type UserChallengeWithDetails = UserChallenge & {
+  user: User
+  challenge: Challenge
+}
+
+// 成就类型扩展
+export type AchievementWithType = Achievement & {
+  type: AchievementType
+}
+
+// 积分类型扩展
+export type PointWithType = Point & {
+  type: PointType
+}
+
+// 挑战类型扩展
+export type ChallengeWithType = Challenge & {
+  type: ChallengeType
+}
+
+// 记忆项类型定义
+export interface MemoryItem {
+  id: string
+  content: string
+  category: string
+  difficulty: "easy" | "medium" | "hard"
+  createdAt: Date
+  lastReviewedAt?: Date
+  nextReviewAt: Date
+  retentionRate: number
+  reviewCount: number
+  intervals: ReviewInterval[]
+}
+
+// 复习间隔类型定义
+export interface ReviewInterval {
+  interval: number
+  scheduledTime: Date
+  actualTime?: Date
+  success: boolean
+  retentionBefore: number
+  retentionAfter: number
+}
+
+// 分类类型定义
+export interface Category {
+  id: string
+  name: string
+  color?: string
+  itemCount: number
+  averageRetention: number
+}
+
+// 难度级别类型定义
+export type DifficultyLevel = "easy" | "medium" | "hard"
