@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Bell, Clock, TrendingUp, Calendar, Zap, Award } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { Bell, TrendingUp, Calendar, Zap, Award } from "lucide-react";
 import { MemoryItem } from "@/types";
 import { storageManager } from "@/utils/storage";
 import { SmartReviewScheduler } from "@/utils/reviewScheduler";
@@ -15,12 +15,87 @@ export function NotificationSystem({ onStartReview }: NotificationSystemProps) {
   const [urgentItems, setUrgentItems] = useState<MemoryItem[]>([]);
   const [todayPlan, setTodayPlan] = useState<MemoryItem[]>([]);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
-  const [showNotifications, setShowNotifications] = useState(true);
+  const [showNotifications] = useState(true);
   const [studyStreak, setStudyStreak] = useState(0);
-  const [dailyGoal, setDailyGoal] = useState(10);
+  const [dailyGoal] = useState(10);
   const [completedToday, setCompletedToday] = useState(0);
 
   const scheduler = new SmartReviewScheduler();
+
+  const loadReviewData = useCallback(async () => {
+    try {
+      const items = await storageManager.getItems();
+      
+      // 获取需要复习的项目
+      const toReview = items.filter(item => item.nextReviewAt <= new Date());
+      setItemsToReview(toReview);
+      
+      // 获取紧急项目（超过预定时间1小时以上）
+      const urgent = toReview.filter(item =>
+        differenceInMinutes(new Date(), item.nextReviewAt) > 60
+      );
+      setUrgentItems(urgent);
+      
+      // 获取今日计划
+      const plan = scheduler.generateDailyPlan(items);
+      setTodayPlan(plan);
+    } catch (error) {
+      console.error("加载复习数据失败:", error);
+    }
+  }, [scheduler]);
+
+  const loadStudyStats = useCallback(async () => {
+    try {
+      const items = await storageManager.getItems();
+      const now = new Date();
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+      
+      // 计算今日完成的复习
+      const completed = items.filter(item =>
+        item.lastReviewedAt && item.lastReviewedAt >= todayStart
+      ).length;
+      setCompletedToday(completed);
+      
+      // 计算连续学习天数（简化版）
+      const yesterday = new Date(todayStart);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayCompleted = items.filter(item =>
+        item.lastReviewedAt &&
+        item.lastReviewedAt >= yesterday &&
+        item.lastReviewedAt < todayStart
+      ).length;
+      
+      setStudyStreak(yesterdayCompleted > 0 ? 1 : 0);
+    } catch (error) {
+      console.error("加载学习统计失败:", error);
+    }
+  }, []);
+
+  const checkNotificationPermission = useCallback(async () => {
+    if ("Notification" in window) {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+    }
+  }, []);
+
+  const checkAndNotify = useCallback(() => {
+    if (itemsToReview.length > 0 && notificationPermission === "granted") {
+      const newNotifications = itemsToReview.filter(item => {
+        const now = new Date();
+        const diffMinutes = differenceInMinutes(now, item.nextReviewAt);
+        return diffMinutes >= 0 && diffMinutes <= 5; // 5分钟内的新提醒
+      });
+
+      newNotifications.forEach(item => {
+        new Notification("记忆复习提醒", {
+          body: `"${item.content.substring(0, 50)}..." 需要复习了`,
+          icon: "/favicon.ico",
+          tag: `review-${item.id}`
+        });
+      });
+    }
+  }, [itemsToReview, notificationPermission]);
 
   useEffect(() => {
     loadReviewData();
@@ -34,97 +109,17 @@ export function NotificationSystem({ onStartReview }: NotificationSystemProps) {
     }, 60000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [loadReviewData, checkNotificationPermission, loadStudyStats]);
 
   useEffect(() => {
     if (showNotifications && notificationPermission === "granted") {
       checkAndNotify();
     }
-  }, [itemsToReview]);
+  }, [checkAndNotify, notificationPermission, showNotifications]);
 
-  const loadReviewData = async () => {
-    try {
-      const items = await storageManager.getItems();
-      
-      // 获取需要复习的项目
-      const toReview = items.filter(item => item.nextReviewAt <= new Date());
-      setItemsToReview(toReview);
-      
-      // 获取紧急项目（超过预定时间1小时以上）
-      const urgent = toReview.filter(item => 
-        differenceInMinutes(new Date(), item.nextReviewAt) > 60
-      );
-      setUrgentItems(urgent);
-      
-      // 获取今日计划
-      const plan = scheduler.generateDailyPlan(items);
-      setTodayPlan(plan);
-    } catch (error) {
-      console.error("加载复习数据失败:", error);
-    }
-  };
-
-  const loadStudyStats = async () => {
-    try {
-      const items = await storageManager.getItems();
-      const now = new Date();
-      const todayStart = new Date(now);
-      todayStart.setHours(0, 0, 0, 0);
-      
-      // 计算今日完成的复习
-      const completed = items.filter(item => 
-        item.lastReviewedAt && item.lastReviewedAt >= todayStart
-      ).length;
-      setCompletedToday(completed);
-      
-      // 计算连续学习天数（简化版）
-      const yesterday = new Date(todayStart);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayCompleted = items.filter(item => 
-        item.lastReviewedAt && 
-        item.lastReviewedAt >= yesterday && 
-        item.lastReviewedAt < todayStart
-      ).length;
-      
-      setStudyStreak(yesterdayCompleted > 0 ? 1 : 0);
-    } catch (error) {
-      console.error("加载学习统计失败:", error);
-    }
-  };
-
-  const checkNotificationPermission = async () => {
-    if (Notification in window) {
-      const permission = await Notification.requestPermission();
-      setNotificationPermission(permission);
-    }
-  };
-
-  const checkAndNotify = () => {
-    if (itemsToReview.length > 0 && notificationPermission === "granted") {
-      const newNotifications = itemsToReview.filter(item => {
-        const now = new Date();
-        const diffMinutes = differenceInMinutes(now, item.nextReviewAt);
-        return diffMinutes >= 0 && diffMinutes <= 5; // 5分钟内的新提醒
-      });
-
-      newNotifications.forEach(item => {
-        new Notification("记忆复习提醒", {
-          body: `"${item.content.substring(0, 50)}..." 需要复习了`,
-          icon: "/favicon.ico",
-          tag: `review-${item.id}`,
-          badge: "/badge.png",
-          vibrate: [200, 100, 200],
-          actions: [
-            { action: "review", title: "立即复习" },
-            { action: "later", title: "稍后提醒" }
-          ]
-        });
-      });
-    }
-  };
 
   const requestNotificationPermission = async () => {
-    if (Notification in window) {
+    if ("Notification" in window) {
       const permission = await Notification.requestPermission();
       setNotificationPermission(permission);
     }

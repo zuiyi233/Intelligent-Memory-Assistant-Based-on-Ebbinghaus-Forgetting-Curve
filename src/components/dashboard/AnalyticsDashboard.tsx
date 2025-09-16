@@ -1,9 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
-  LineChart,
-  Line,
   AreaChart,
   Area,
   BarChart,
@@ -17,13 +15,10 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  Label,
   LabelList,
 } from "recharts";
 import { MemoryItem, Category } from "@/types";
-import { storageManager } from "@/utils/storage";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
-import { zhCN } from "date-fns/locale";
 
 interface DashboardProps {
   items: MemoryItem[];
@@ -46,7 +41,6 @@ interface CategoryStats {
 
 export function AnalyticsDashboard({ items, categories }: DashboardProps) {
   const [timeRange, setTimeRange] = useState<"week" | "month" | "year">("week");
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [categoryStats, setCategoryStats] = useState<CategoryStats[]>([]);
   const [performanceMetrics, setPerformanceMetrics] = useState({
@@ -57,62 +51,7 @@ export function AnalyticsDashboard({ items, categories }: DashboardProps) {
     streakDays: 0,
   });
 
-  useEffect(() => {
-    generateChartData();
-    generateCategoryStats();
-    calculatePerformanceMetrics();
-  }, [items, categories, timeRange, selectedCategory]);
-
-  const generateChartData = () => {
-    const days = timeRange === "week" ? 7 : timeRange === "month" ? 30 : 365;
-    const data: ChartDataPoint[] = [];
-
-    for (let i = days - 1; i >= 0; i--) {
-      const date = subDays(new Date(), i);
-      const dayStart = startOfDay(date);
-      const dayEnd = endOfDay(date);
-
-      // 过滤当天的数据
-      const dayItems = items.filter(item => {
-        const created = new Date(item.createdAt);
-        return created >= dayStart && created <= dayEnd;
-      });
-
-      const reviewedItems = items.filter(item =>
-        item.lastReviewedAt &&
-        item.lastReviewedAt >= dayStart &&
-        item.lastReviewedAt <= dayEnd
-      );
-
-      const avgRetention =
-        dayItems.length > 0
-          ? dayItems.reduce((sum, item) => sum + item.retentionRate, 0) /
-            dayItems.length
-          : 0;
-
-      data.push({
-        date: format(date, "MM/dd"),
-        retention: Math.round(avgRetention),
-        items: dayItems.length,
-        reviews: reviewedItems.length,
-      });
-    }
-
-    setChartData(data);
-  };
-
-  const generateCategoryStats = () => {
-    const stats: CategoryStats[] = categories.map(category => ({
-      name: category.name,
-      count: category.itemCount,
-      averageRetention: Math.round(category.averageRetention),
-      color: category.color,
-    }));
-
-    setCategoryStats(stats);
-  };
-
-  const calculatePerformanceMetrics = () => {
+  const calculatePerformanceMetrics = useCallback(() => {
     const totalItems = items.length;
     const averageRetention =
       totalItems > 0
@@ -148,7 +87,63 @@ export function AnalyticsDashboard({ items, categories }: DashboardProps) {
       completedToday,
       streakDays,
     });
-  };
+  }, [items]);
+
+  const generateChartData = useCallback(() => {
+    const days = timeRange === "week" ? 7 : timeRange === "month" ? 30 : 365;
+    const data: ChartDataPoint[] = [];
+
+    for (let i = days - 1; i >= 0; i--) {
+      const date = subDays(new Date(), i);
+      const dayStart = startOfDay(date);
+      const dayEnd = endOfDay(date);
+
+      // 过滤当天的数据
+      const dayItems = items.filter(item => {
+        const created = new Date(item.createdAt);
+        return created >= dayStart && created <= dayEnd;
+      });
+
+      const reviewedItems = items.filter(item =>
+        item.lastReviewedAt &&
+        item.lastReviewedAt >= dayStart &&
+        item.lastReviewedAt <= dayEnd
+      );
+
+      const avgRetention =
+        dayItems.length > 0
+          ? dayItems.reduce((sum, item) => sum + item.retentionRate, 0) /
+            dayItems.length
+          : 0;
+
+      data.push({
+        date: format(date, "MM/dd"),
+        retention: Math.round(avgRetention),
+        items: dayItems.length,
+        reviews: reviewedItems.length,
+      });
+    }
+
+    setChartData(data);
+  }, [items, timeRange]);
+
+  const generateCategoryStats = useCallback(() => {
+    const stats: CategoryStats[] = categories.map(category => ({
+      name: category.name,
+      count: category.itemCount,
+      averageRetention: Math.round(category.averageRetention),
+      color: category.color,
+    }));
+
+    setCategoryStats(stats);
+  }, [categories]);
+
+  useEffect(() => {
+    generateChartData();
+    generateCategoryStats();
+    calculatePerformanceMetrics();
+  }, [generateChartData, generateCategoryStats, calculatePerformanceMetrics]);
+
 
   const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"];
 

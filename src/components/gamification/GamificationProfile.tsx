@@ -1,12 +1,10 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Trophy, Star, Zap, Calendar, Award, Coins, Sparkles } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Award, Coins, Sparkles } from 'lucide-react'
 import { GamificationProfileWithDetails } from '@/types'
 import { UserAchievement, PointTransaction, Achievement } from '@prisma/client'
-import { cn } from '@/lib/utils'
 
 interface GamificationProfileProps {
   userId: string
@@ -90,10 +88,6 @@ export function GamificationProfile({ userId, profile: externalProfile, onRefres
     )
   }
 
-  // 计算升级进度
-  const currentLevelExp = (profile.level - 1) * 100
-  const nextLevelExp = profile.level * 100
-  const progress = ((profile.experience - currentLevelExp) / (nextLevelExp - currentLevelExp)) * 100
 
   // 要显示的成就数量
   const achievementsToShow = showMoreAchievements ? profile.achievements : profile.achievements.slice(0, 6)
@@ -178,12 +172,11 @@ export function GamificationProfile({ userId, profile: externalProfile, onRefres
                     {new Date(transaction.createdAt).toLocaleDateString()}
                   </p>
                 </div>
-                <span className={cn(
-                  "font-bold text-xs px-2 py-1 rounded-full",
+                <span className={`font-bold text-xs px-2 py-1 rounded-full ${
                   transaction.amount > 0
                     ? "text-green-600 bg-green-50"
                     : "text-red-600 bg-red-50"
-                )}>
+                }`}>
                   {transaction.amount > 0 ? '+' : ''}{transaction.amount}
                 </span>
               </div>

@@ -60,7 +60,7 @@ export async function GET() {
       return NextResponse.json(
         {
           success: true,
-          data: (session as any)?.user
+          data: session.user
         },
         { status: 200 }
       )

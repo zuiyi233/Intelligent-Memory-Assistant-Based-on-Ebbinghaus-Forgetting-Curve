@@ -2,17 +2,10 @@
 
 import React from "react";
 import { AnalyticsDashboard } from "@/components/dashboard/AnalyticsDashboard";
-import { MemoryItem } from "@/types";
+import { MemoryItem, Category } from "@/types";
 import { storageManager } from "@/utils/storage";
 import { useEffect, useState } from "react";
 import { Navigation } from "@/components/layout/Navigation";
-
-// 简单的Category类型定义
-interface Category {
-  id: string;
-  name: string;
-  color?: string;
-}
 
 export default function StatsPage() {
   const [items, setItems] = useState<MemoryItem[]>([]);

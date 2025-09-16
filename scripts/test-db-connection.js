@@ -1,4 +1,4 @@
-const { PrismaClient } = require('@prisma/client')
+import { PrismaClient } from '@prisma/client'
 
 // 从环境变量中获取数据库连接信息
 const databaseUrl = process.env.DATABASE_URL

@@ -78,7 +78,7 @@ export class ForgottenContentIdentifier {
       }
       
       // 检查当前保持率是否过低
-      const elapsedMinutes = (now.getTime() - item.lastReviewedAt?.getTime() || item.createdAt.getTime()) / (1000 * 60);
+      const elapsedMinutes = (now.getTime() - (item.lastReviewedAt?.getTime() || item.createdAt.getTime())) / (1000 * 60);
       const currentRetention = calculateRetentionRate(elapsedMinutes, item.difficulty);
       
       return isForgotten(currentRetention);
@@ -113,7 +113,7 @@ export class ForgottenContentIdentifier {
     score += overdueHours * 2;
     
     // 2. 当前保持率越低，优先级越高
-    const elapsedMinutes = (now.getTime() - item.lastReviewedAt?.getTime() || item.createdAt.getTime()) / (1000 * 60);
+    const elapsedMinutes = (now.getTime() - (item.lastReviewedAt?.getTime() || item.createdAt.getTime())) / (1000 * 60);
     const currentRetention = calculateRetentionRate(elapsedMinutes, item.difficulty);
     score += (100 - currentRetention) * 0.5;
     
@@ -168,7 +168,7 @@ export class ForgottenContentIdentifier {
       
       const now = new Date();
       stats.forgottenCount = recentItems.filter(item => {
-        const elapsedMinutes = (now.getTime() - item.lastReviewedAt?.getTime() || item.createdAt.getTime()) / (1000 * 60);
+        const elapsedMinutes = (now.getTime() - (item.lastReviewedAt?.getTime() || item.createdAt.getTime())) / (1000 * 60);
         const retention = calculateRetentionRate(elapsedMinutes, item.difficulty);
         return isForgotten(retention);
       }).length;

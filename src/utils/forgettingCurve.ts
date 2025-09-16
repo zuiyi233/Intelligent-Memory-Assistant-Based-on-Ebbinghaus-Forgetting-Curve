@@ -133,11 +133,10 @@ export function adjustIntervalByPerformance(
  */
 export function generateReviewSchedule(item: MemoryItem): ReviewInterval[] {
   const schedule: ReviewInterval[] = [];
-  let currentTime = item.createdAt;
   
   for (let i = 0; i < REVIEW_INTERVALS.length; i++) {
     const interval = REVIEW_INTERVALS[i];
-    const scheduledTime = addMinutes(currentTime, interval);
+    const scheduledTime = addMinutes(item.createdAt, interval);
     
     schedule.push({
       interval,

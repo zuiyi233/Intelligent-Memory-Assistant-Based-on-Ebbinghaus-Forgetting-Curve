@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React from 'react'
 import { GamificationProfile } from '@/components/gamification/GamificationProfile'
 import { DailyChallenges } from '@/components/gamification/DailyChallenges'
 import { Leaderboard } from '@/components/gamification/Leaderboard'
@@ -26,14 +26,12 @@ import {
   Coins,
   Award,
   Calendar,
-  ArrowUp,
   Sparkles,
   Gift
 } from 'lucide-react'
 import { useGamificationData } from '@/hooks/useGamificationData'
 import { GamificationProfileWithDetails } from '@/types'
 import { UserAchievement, UserDailyChallenge } from '@prisma/client'
-import { cn } from '@/lib/utils'
 
 // 游戏化数据概览组件
 const GamificationOverview = ({ profile }: { profile: GamificationProfileWithDetails | null }) => {
@@ -59,12 +57,6 @@ const GamificationOverview = ({ profile }: { profile: GamificationProfileWithDet
   const progress = ((profile.experience - currentLevelExp) / (nextLevelExp - currentLevelExp)) * 100
 
   // 计算成就数量
-  const unlockedAchievements = profile.achievements.filter((a: UserAchievement) => a.progress >= 100).length
-  const totalAchievements = profile.achievements.length
-
-  // 计算挑战完成情况
-  const completedChallenges = profile.dailyChallenges.filter((c: UserDailyChallenge) => c.completed).length
-  const totalChallenges = profile.dailyChallenges.length
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
@@ -280,7 +272,6 @@ export default function GamificationPage() {
   const {
     profile,
     loading,
-    error,
     refreshProfile,
     updateChallengeProgress,
     claimChallengeReward

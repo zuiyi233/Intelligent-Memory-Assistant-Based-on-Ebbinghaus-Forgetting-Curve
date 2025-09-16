@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Trash2, Edit3, Clock, Tag, AlertCircle } from "lucide-react";
+import React, { useState } from "react";
+import { Trash2, Clock, Tag, AlertCircle } from "lucide-react";
 import { MemoryItem } from "@/types";
 import { storageManager } from "@/utils/storage";
 import { formatDistanceToNow } from "date-fns";

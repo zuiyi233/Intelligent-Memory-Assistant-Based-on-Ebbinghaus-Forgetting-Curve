@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Plus, Palette, Trash2, Edit3 } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { Plus, Trash2, Edit3 } from "lucide-react";
 import { Category } from "@/types";
 import { storageManager } from "@/utils/storage";
 
@@ -13,11 +13,7 @@ export function CategoryManager({ onCategoriesChange }: CategoryManagerProps) {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [formData, setFormData] = useState({ name: "", color: "#3B82F6" });
 
-  useEffect(() => {
-    loadCategories();
-  }, []);
-
-  const loadCategories = async () => {
+  const loadCategories = useCallback(async () => {
     try {
       const cats = await storageManager.getCategories();
       setCategories(cats);
@@ -25,7 +21,11 @@ export function CategoryManager({ onCategoriesChange }: CategoryManagerProps) {
     } catch (error) {
       console.error("加载分类失败:", error);
     }
-  };
+  }, [onCategoriesChange]);
+
+  useEffect(() => {
+    loadCategories();
+  }, [loadCategories]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,7 +61,7 @@ export function CategoryManager({ onCategoriesChange }: CategoryManagerProps) {
 
   const handleEdit = (category: Category) => {
     setEditingCategory(category);
-    setFormData({ name: category.name, color: category.color });
+    setFormData({ name: category.name, color: category.color || "#3B82F6" });
     setShowAddForm(true);
   };
 

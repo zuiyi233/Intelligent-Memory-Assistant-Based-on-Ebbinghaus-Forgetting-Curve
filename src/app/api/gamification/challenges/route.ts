@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const challenges = await gamificationService.getDailyChallenges(userId)
+    const challenges = await gamificationService.getDailyChallenges()
     return NextResponse.json(challenges)
   } catch (error) {
     console.error('获取每日挑战失败:', error)

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { gamificationService } from '@/services/gamification.service'
+import { LeaderboardType, LeaderboardPeriod } from '@prisma/client'
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,7 +9,7 @@ export async function GET(request: NextRequest) {
     const period = searchParams.get('period') || 'weekly'
     const limit = parseInt(searchParams.get('limit') || '10')
     
-    const leaderboard = await gamificationService.getLeaderboard(type as any, period as any, limit)
+    const leaderboard = await gamificationService.getLeaderboard(type as LeaderboardType, period as LeaderboardPeriod, limit)
     return NextResponse.json(leaderboard)
   } catch (error) {
     console.error('获取排行榜数据失败:', error)

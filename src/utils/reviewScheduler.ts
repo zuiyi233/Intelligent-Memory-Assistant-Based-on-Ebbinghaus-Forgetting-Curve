@@ -1,9 +1,8 @@
 import { MemoryItem, ReviewInterval } from "@/types";
-import { 
-  calculateRetentionRate, 
-  getNextReviewTime, 
+import {
+  calculateRetentionRate,
   adjustIntervalByPerformance,
-  generateReviewSchedule 
+  generateReviewSchedule
 } from "./forgettingCurve";
 import { addMinutes } from "date-fns";
 
@@ -227,8 +226,8 @@ export class SmartReviewScheduler {
   predictLongTermRetention(
     items: MemoryItem[],
     daysAhead: number = 30
-  ): Array<{ date: Date; predictedRetention: number }> {
-    const predictions = [];
+  ): { date: Date; predictedRetention: number }[] {
+    const predictions: { date: Date; predictedRetention: number }[] = [];
     const now = new Date();
     
     for (let i = 1; i <= daysAhead; i++) {

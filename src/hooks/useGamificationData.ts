@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { GamificationProfileWithDetails } from '@/types'
 
 export interface GamificationData {
@@ -18,7 +18,7 @@ export function useGamificationData(userId: string): GamificationData {
   const [error, setError] = useState<string | null>(null)
 
   // 获取用户资料
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -34,10 +34,10 @@ export function useGamificationData(userId: string): GamificationData {
     } finally {
       setLoading(false)
     }
-  }
+  }, [userId])
 
   // 更新挑战进度
-  const handleUpdateChallengeProgress = async (challengeId: string, progress: number) => {
+  const handleUpdateChallengeProgress = useCallback(async (challengeId: string, progress: number) => {
     try {
       const response = await fetch('/api/gamification/challenges', {
         method: 'POST',
@@ -75,10 +75,10 @@ export function useGamificationData(userId: string): GamificationData {
       console.error('更新挑战进度失败:', err)
       setError('更新挑战进度失败')
     }
-  }
+  }, [profile, userId])
 
   // 领取挑战奖励
-  const handleClaimChallengeReward = async (challengeId: string) => {
+  const handleClaimChallengeReward = useCallback(async (challengeId: string) => {
     try {
       const response = await fetch('/api/gamification/challenges/claim', {
         method: 'POST',
@@ -119,14 +119,14 @@ export function useGamificationData(userId: string): GamificationData {
       console.error('领取挑战奖励失败:', err)
       setError('领取挑战奖励失败')
     }
-  }
+  }, [profile, userId])
 
   // 初始化时获取数据
   useEffect(() => {
     if (userId) {
       fetchProfile()
     }
-  }, [userId])
+  }, [userId, fetchProfile])
 
   return {
     profile,

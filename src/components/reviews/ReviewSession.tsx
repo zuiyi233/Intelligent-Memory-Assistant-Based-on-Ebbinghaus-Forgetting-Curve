@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Play, Pause, RotateCcw, Check, X, Clock, Brain } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { RotateCcw, Check, X, Clock, Brain } from "lucide-react";
 import { MemoryItem } from "@/types";
 import { storageManager } from "@/utils/storage";
 import { SmartReviewScheduler } from "@/utils/reviewScheduler";
@@ -27,11 +27,7 @@ export function ReviewSession({ onComplete, onSkip }: ReviewSessionProps) {
 
   const scheduler = new SmartReviewScheduler();
 
-  useEffect(() => {
-    loadReviewItems();
-  }, []);
-
-  const loadReviewItems = async () => {
+  const loadReviewItems = useCallback(async () => {
     try {
       const allItems = await storageManager.getItems();
       const now = new Date();
@@ -56,7 +52,12 @@ export function ReviewSession({ onComplete, onSkip }: ReviewSessionProps) {
     } catch (error) {
       console.error("加载复习项目失败:", error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadReviewItems();
+  }, [loadReviewItems]);
+
 
   const calculatePriorityScore = (item: MemoryItem, now: Date): number => {
     let score = 0;
@@ -275,7 +276,7 @@ export function ReviewSession({ onComplete, onSkip }: ReviewSessionProps) {
         {showAnswer ? (
           <p>请诚实回答，这将帮助系统为你制定更好的复习计划。</p>
         ) : (
-          <p>点击"显示答案"后开始计时，尽量回忆内容。</p>
+          <p>点击&ldquo;显示答案&rdquo;后开始计时，尽量回忆内容。</p>
         )}
       </div>
     </div>

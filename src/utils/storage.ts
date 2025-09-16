@@ -48,12 +48,12 @@ export class LocalStorageManager {
       if (!stored) return [];
 
       const parsed = JSON.parse(stored);
-      return parsed.map((item: any) => ({
+      return parsed.map((item: MemoryItem & { createdAt: string; lastReviewedAt?: string; nextReviewAt: string; intervals?: Array<{ scheduledTime: string; actualTime?: string }> }) => ({
         ...item,
         createdAt: new Date(item.createdAt),
         lastReviewedAt: item.lastReviewedAt ? new Date(item.lastReviewedAt) : undefined,
         nextReviewAt: new Date(item.nextReviewAt),
-        intervals: item.intervals?.map((interval: any) => ({
+        intervals: item.intervals?.map((interval: { scheduledTime: string; actualTime?: string }) => ({
           ...interval,
           scheduledTime: new Date(interval.scheduledTime),
           actualTime: interval.actualTime ? new Date(interval.actualTime) : undefined,

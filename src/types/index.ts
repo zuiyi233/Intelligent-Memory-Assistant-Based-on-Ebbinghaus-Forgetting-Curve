@@ -15,11 +15,7 @@ import {
   ChallengeType,
   LeaderboardType,
   LeaderboardPeriod,
-  Point,
-  Challenge,
-  UserChallenge,
-  AchievementType,
-  PointType
+  AchievementType
 } from "@prisma/client"
 
 // 扩展用户类型
@@ -268,33 +264,9 @@ export interface GamificationNotification {
   createdAt: Date
 }
 
-// 新增游戏化相关类型
-export type PointWithDetails = Point & {
-  user: User
-}
-
-export type ChallengeWithDetails = Challenge & {
-  userChallenges: UserChallenge[]
-}
-
-export type UserChallengeWithDetails = UserChallenge & {
-  user: User
-  challenge: Challenge
-}
-
 // 成就类型扩展
 export type AchievementWithType = Achievement & {
   type: AchievementType
-}
-
-// 积分类型扩展
-export type PointWithType = Point & {
-  type: PointType
-}
-
-// 挑战类型扩展
-export type ChallengeWithType = Challenge & {
-  type: ChallengeType
 }
 
 // 记忆项类型定义

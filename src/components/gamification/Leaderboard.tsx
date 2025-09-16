@@ -1,11 +1,9 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Trophy, Medal, Award, Crown, TrendingUp, Calendar, Star, Sparkles } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Trophy, Medal, Crown, TrendingUp, Calendar, Star } from 'lucide-react'
 import { LeaderboardEntry, LeaderboardType, LeaderboardPeriod, User, GamificationProfile } from '@prisma/client'
-import { cn } from '@/lib/utils'
 
 interface LeaderboardProps {
   userId?: string
@@ -181,12 +179,11 @@ export function Leaderboard({ userId }: LeaderboardProps) {
             <button
               key={type}
               onClick={() => handleTypeChange(type as LeaderboardType)}
-              className={cn(
-                "text-xs px-1.5 md:px-2 py-1 rounded transition-colors",
+              className={`text-xs px-1.5 md:px-2 py-1 rounded transition-colors ${
                 selectedType === type
                   ? `shadow-sm ${getTypeColor(type)}`
                   : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-              )}
+              }`}
             >
               {getTypeLabel(type)}
             </button>
@@ -198,12 +195,11 @@ export function Leaderboard({ userId }: LeaderboardProps) {
             <button
               key={period}
               onClick={() => handlePeriodChange(period as LeaderboardPeriod)}
-              className={cn(
-                "text-xs px-1.5 md:px-2 py-1 rounded transition-colors",
+              className={`text-xs px-1.5 md:px-2 py-1 rounded transition-colors ${
                 selectedPeriod === period
                   ? "bg-blue-100 text-blue-700 shadow-sm"
                   : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-              )}
+              }`}
             >
               {getPeriodLabel(period)}
             </button>
@@ -218,13 +214,13 @@ export function Leaderboard({ userId }: LeaderboardProps) {
             {leaderboardEntries.slice(0, 8).map((entry: LeaderboardEntryWithDetails, index) => (
               <div
                 key={entry.id}
-                className={cn(
-                  "flex items-center justify-between p-2 md:p-3 transition-colors",
-                  index > 0 && "border-t border-gray-100",
+                className={`flex items-center justify-between p-2 md:p-3 transition-colors ${
+                  index > 0 && "border-t border-gray-100"
+                } ${
                   isCurrentUser(entry.userId)
                     ? "bg-blue-50"
                     : "hover:bg-gray-50"
-                )}
+                }`}
               >
                 <div className="flex items-center gap-2 md:gap-3">
                   <div className="flex-shrink-0 w-6 h-6 md:w-8 md:h-8 flex items-center justify-center">
@@ -233,10 +229,10 @@ export function Leaderboard({ userId }: LeaderboardProps) {
                    
                   <div className="flex items-center gap-2">
                     {entry.user.avatar ? (
-                      <img
-                        src={entry.user.avatar}
-                        alt={entry.user.name || entry.user.username}
-                        className="w-6 h-6 md:w-8 md:h-8 rounded-full object-cover border border-gray-200"
+                      <div
+                        style={{ backgroundImage: `url(${entry.user.avatar})` }}
+                        className="w-6 h-6 md:w-8 md:h-8 rounded-full object-cover border border-gray-200 bg-cover bg-center"
+                        title={entry.user.name || entry.user.username}
                       />
                     ) : (
                       <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-gray-200 flex items-center justify-center border border-gray-300">
@@ -248,10 +244,9 @@ export function Leaderboard({ userId }: LeaderboardProps) {
                      
                     <div>
                       <div className="flex items-center gap-1">
-                        <span className={cn(
-                          "font-medium text-sm",
+                        <span className={`font-medium text-sm ${
                           isCurrentUser(entry.userId) ? "text-blue-600" : "text-gray-900"
-                        )}>
+                        }`}>
                           {entry.user.name || entry.user.username}
                         </span>
                         {isCurrentUser(entry.userId) && (
@@ -273,12 +268,13 @@ export function Leaderboard({ userId }: LeaderboardProps) {
                 </div>
                  
                 <div className="flex items-center gap-1">
-                  <span className={cn(
-                    "font-bold",
-                    entry.rank === 1 && "text-yellow-600",
-                    entry.rank === 2 && "text-gray-500",
+                  <span className={`font-bold ${
+                    entry.rank === 1 && "text-yellow-600"
+                  } ${
+                    entry.rank === 2 && "text-gray-500"
+                  } ${
                     entry.rank === 3 && "text-amber-600"
-                  )}>
+                  }`}>
                     {formatScore(entry.score)}
                   </span>
                   <span className="text-xs text-gray-500">

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Eye, EyeOff, Mail, User, Lock } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function SignInPage() {

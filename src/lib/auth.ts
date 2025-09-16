@@ -2,8 +2,8 @@ import { NextAuthOptions } from "next-auth"
 import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import CredentialsProvider from "next-auth/providers/credentials"
 import GoogleProvider from "next-auth/providers/google"
-import { prisma } from "./db"
 import bcrypt from "bcryptjs"
+import { prisma } from "./db"
 
 // 添加日志以验证 NEXTAUTH_URL 环境变量
 console.log("NextAuth 配置 - NEXTAUTH_URL:", process.env.NEXTAUTH_URL);
@@ -15,12 +15,11 @@ export const authOptions: NextAuthOptions = {
   },
   pages: {
     signIn: "/auth/signin",
-    signUp: "/auth/signup",
   },
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: process.env.GOOGLE_CLIENT_ID || "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
     }),
     CredentialsProvider({
       name: "credentials",
@@ -64,17 +63,25 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }: any) {
+    async jwt({ token, user }) {
       if (user) {
+        const typedUser = user as {
+          id: string;
+          email: string;
+          name?: string;
+          username: string;
+          isPremium: boolean;
+        };
+        
         return {
           ...token,
-          username: user.username,
-          isPremium: user.isPremium,
+          username: typedUser.username,
+          isPremium: typedUser.isPremium,
         }
       }
       return token
     },
-    async session({ session, token }: any) {
+    async session({ session, token }) {
       return {
         ...session,
         user: {

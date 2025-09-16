@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { User, Mail, Calendar, Trophy, BarChart3, Settings } from "lucide-react";
 import { Navigation } from "@/components/layout/Navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function Profile() {
   const { user, loading } = useAuth();
+  const router = useRouter();
   const [userData, setUserData] = useState<{
     name?: string | null;
     username?: string;
@@ -56,7 +58,7 @@ export default function Profile() {
         <Card className="w-full max-w-md">
           <CardContent className="pt-6">
             <p className="text-center">请先登录查看个人资料</p>
-            <Button className="w-full mt-4" onClick={() => window.location.href = "/auth/signin"}>
+            <Button className="w-full mt-4" onClick={() => router.push("/auth/signin")}>
               前往登录
             </Button>
           </CardContent>

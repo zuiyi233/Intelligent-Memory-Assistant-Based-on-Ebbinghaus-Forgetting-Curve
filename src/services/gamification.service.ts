@@ -33,8 +33,8 @@ interface ReviewRecord {
 interface UserInfo {
   id: string;
   username: string;
-  name?: string;
-  avatar?: string;
+  name?: string | null;
+  avatar?: string | null;
 }
 
 // 定义排行榜条目类型
@@ -46,6 +46,38 @@ interface LeaderboardProfile {
   streak: number;
   user: UserInfo;
   score?: number;
+}
+
+// 定义排行榜查询结果类型
+interface LeaderboardQueryResult {
+  id: string;
+  userId: string;
+  level: number;
+  points: number;
+  streak: number;
+  username: string;
+  name: string | null;
+  avatar: string | null;
+  score?: number;
+}
+
+// 定义完整的排行榜条目类型，包含所需的 user 和 profile 属性
+interface CompleteLeaderboardEntry extends LeaderboardEntry {
+  user: {
+    id: string;
+    username: string;
+    name: string | null;
+    avatar: string | null;
+  };
+  profile: {
+    id: string;
+    userId: string;
+    level: number;
+    points: number;
+    experience: number;
+    streak: number;
+    lastActiveAt: Date;
+  };
 }
 
 /**
@@ -132,57 +164,62 @@ export class GamificationService {
    * 添加积分并创建交易记录
    */
   async addPoints(userId: string, amount: number, type: PointTransactionType, description: string): Promise<GamificationProfile> {
-    const profile = await this.getOrCreateProfile(userId)
-    
-    // 验证积分数量
-    if (amount === 0) {
-      throw new Error('积分数量不能为0')
-    }
-    
-    // 如果是扣除积分，检查用户是否有足够积分
-    if (amount < 0 && profile.points < Math.abs(amount)) {
-      throw new Error('积分不足')
-    }
-    
-    // 创建积分交易记录
-    await prisma.pointTransaction.create({
-      data: {
-        userId,
-        amount,
-        type,
-        description
+    try {
+      const profile = await this.getOrCreateProfile(userId)
+      
+      // 验证积分数量
+      if (amount === 0) {
+        throw new Error('积分数量不能为0')
       }
-    })
-
-    // 创建积分记录
-    await prisma.point.create({
-      data: {
-        userId,
-        amount: Math.abs(amount),
-        type: amount > 0 ? PointType.EARNED : PointType.SPENT,
-        source: description
+      
+      // 如果是扣除积分，检查用户是否有足够积分
+      if (amount < 0 && profile.points < Math.abs(amount)) {
+        throw new Error('积分不足')
       }
-    })
+      
+      // 创建积分交易记录
+      await prisma.pointTransaction.create({
+        data: {
+          userId,
+          amount,
+          type,
+          description
+        }
+      })
 
-    // 更新用户积分
-    const newPoints = profile.points + amount
-    const updatedProfile = await prisma.gamificationProfile.update({
-      where: { userId },
-      data: {
-        points: newPoints,
-        lastActiveAt: new Date()
+      // 创建积分记录
+      await prisma.point.create({
+        data: {
+          userId,
+          amount: Math.abs(amount),
+          type: amount > 0 ? PointType.EARNED : PointType.SPENT,
+          source: description
+        }
+      })
+
+      // 更新用户积分
+      const newPoints = profile.points + amount
+      const updatedProfile = await prisma.gamificationProfile.update({
+        where: { userId },
+        data: {
+          points: newPoints,
+          lastActiveAt: new Date()
+        }
+      })
+
+      // 检查积分相关的成就
+      if (amount > 0 && newPoints >= 1000) {
+        await this.checkAchievements(userId, 'POINTS', { points: newPoints })
       }
-    })
 
-    // 检查积分相关的成就
-    if (amount > 0 && newPoints >= 1000) {
-      await this.checkAchievements(userId, 'POINTS', { points: newPoints })
+      // 检查是否升级
+      await this.checkLevelUp(userId)
+
+      return updatedProfile
+    } catch (error: unknown) {
+      console.error('添加积分失败:', error)
+      throw error
     }
-
-    // 检查是否升级
-    await this.checkLevelUp(userId)
-
-    return updatedProfile
   }
 
   /**
@@ -214,20 +251,25 @@ export class GamificationService {
    * 更新用户经验值
    */
   async updateUserExperience(userId: string, amount: number): Promise<GamificationProfile> {
-    const profile = await this.getOrCreateProfile(userId)
-    
-    const updatedProfile = await prisma.gamificationProfile.update({
-      where: { userId },
-      data: {
-        experience: profile.experience + amount,
-        lastActiveAt: new Date()
-      }
-    })
+    try {
+      const profile = await this.getOrCreateProfile(userId)
+      
+      const updatedProfile = await prisma.gamificationProfile.update({
+        where: { userId },
+        data: {
+          experience: profile.experience + amount,
+          lastActiveAt: new Date()
+        }
+      })
 
-    // 检查是否升级
-    await this.checkLevelUp(userId)
+      // 检查是否升级
+      await this.checkLevelUp(userId)
 
-    return updatedProfile
+      return updatedProfile
+    } catch (error: unknown) {
+      console.error('更新用户经验失败:', error)
+      throw error
+    }
   }
 
   /**
@@ -316,40 +358,45 @@ export class GamificationService {
    * 更新连续学习天数
    */
   async updateStreakDays(userId: string): Promise<GamificationProfile> {
-    const profile = await this.getOrCreateProfile(userId)
-    const now = new Date()
-    const lastActive = new Date(profile.lastActiveAt)
-    
-    // 检查是否是连续学习（上次学习在24小时内）
-    const hoursDiff = (now.getTime() - lastActive.getTime()) / (1000 * 60 * 60)
-    
-    let newStreak = profile.streak
-    
-    if (hoursDiff > 24 && hoursDiff < 48) {
-      // 超过24小时但小于48小时，连续天数+1
-      newStreak = profile.streak + 1
-    } else if (hoursDiff >= 48) {
-      // 超过48小时，重置连续天数
-      newStreak = 1
-    }
-    
-    const updatedProfile = await prisma.gamificationProfile.update({
-      where: { userId },
-      data: {
-        streak: newStreak,
-        lastActiveAt: now
+    try {
+      const profile = await this.getOrCreateProfile(userId)
+      const now = new Date()
+      const lastActive = new Date(profile.lastActiveAt)
+      
+      // 检查是否是连续学习（上次学习在24小时内）
+      const hoursDiff = (now.getTime() - lastActive.getTime()) / (1000 * 60 * 60)
+      
+      let newStreak = profile.streak
+      
+      if (hoursDiff > 24 && hoursDiff < 48) {
+        // 超过24小时但小于48小时，连续天数+1
+        newStreak = profile.streak + 1
+      } else if (hoursDiff >= 48) {
+        // 超过48小时，重置连续天数
+        newStreak = 1
       }
-    })
-    
-    // 连续学习奖励
-    if (newStreak > profile.streak && newStreak % 7 === 0) {
-      await this.addPoints(userId, newStreak * 10, PointTransactionType.STREAK_BONUS, `连续学习${newStreak}天奖励`)
+      
+      const updatedProfile = await prisma.gamificationProfile.update({
+        where: { userId },
+        data: {
+          streak: newStreak,
+          lastActiveAt: now
+        }
+      })
+      
+      // 连续学习奖励
+      if (newStreak > profile.streak && newStreak % 7 === 0) {
+        await this.addPoints(userId, newStreak * 10, PointTransactionType.STREAK_BONUS, `连续学习${newStreak}天奖励`)
+      }
+      
+      // 检查连续学习相关的成就
+      await this.checkStreakAchievements(userId, newStreak)
+      
+      return updatedProfile
+    } catch (error: unknown) {
+      console.error('更新连续学习天数失败:', error)
+      throw error
     }
-    
-    // 检查连续学习相关的成就
-    await this.checkStreakAchievements(userId, newStreak)
-    
-    return updatedProfile
   }
 
   /**
@@ -733,88 +780,93 @@ export class GamificationService {
   /**
    * 获取用户的每日挑战进度
    */
-  async getUserDailyChallenges(userId: string): Promise<UserDailyChallenge[]> {
+  async getUserDailyChallenges(userId: string): Promise<(UserDailyChallenge & { challenge: DailyChallenge })[]> {
     return await prisma.userDailyChallenge.findMany({
       where: { userId },
       include: {
         challenge: true
       }
-    })
+    }) as (UserDailyChallenge & { challenge: DailyChallenge })[]
   }
 
   /**
    * 更新挑战进度
    */
   async updateChallengeProgress(userId: string, challengeId: string, progress: number): Promise<UserDailyChallenge> {
-    const userChallenge = await prisma.userDailyChallenge.findUnique({
-      where: {
-        userId_challengeId: {
-          userId,
-          challengeId
-        }
-      },
-      include: {
-        challenge: true
-      }
-    })
-    
-    if (!userChallenge) {
-      // 创建新的用户挑战记录
-      const newUserChallenge = await prisma.userDailyChallenge.create({
-        data: {
-          userId,
-          challengeId,
-          progress,
-          completed: progress >= 100,
-          completedAt: progress >= 100 ? new Date() : null
+    try {
+      const userChallenge = await prisma.userDailyChallenge.findUnique({
+        where: {
+          userId_challengeId: {
+            userId,
+            challengeId
+          }
         },
         include: {
           challenge: true
         }
       })
       
-      // 如果新挑战已经完成，添加积分奖励
-      if (progress >= 100) {
-        await this.addPoints(userId, newUserChallenge.challenge.points, PointTransactionType.CHALLENGE_COMPLETED, `完成挑战: ${newUserChallenge.challenge.title}`)
+      if (!userChallenge) {
+        // 创建新的用户挑战记录
+        const newUserChallenge = await prisma.userDailyChallenge.create({
+          data: {
+            userId,
+            challengeId,
+            progress,
+            completed: progress >= 100,
+            completedAt: progress >= 100 ? new Date() : null
+          },
+          include: {
+            challenge: true
+          }
+        })
+        
+        // 如果新挑战已经完成，添加积分奖励
+        if (progress >= 100) {
+          await this.addPoints(userId, newUserChallenge.challenge.points, PointTransactionType.CHALLENGE_COMPLETED, `完成挑战: ${newUserChallenge.challenge.title}`)
+          
+          // 检查挑战相关的成就
+          await this.checkChallengeAchievements(userId, newUserChallenge.challenge.type)
+        }
+        
+        return newUserChallenge
+      }
+      
+      // 更新现有挑战记录
+      const wasCompleted = userChallenge.completed
+      const isCompleted = progress >= 100
+      const justCompleted = isCompleted && !wasCompleted
+      
+      const updatedChallenge = await prisma.userDailyChallenge.update({
+        where: {
+          userId_challengeId: {
+            userId,
+            challengeId
+          }
+        },
+        data: {
+          progress,
+          completed: isCompleted,
+          ...(justCompleted ? { completedAt: new Date() } : {})
+        },
+        include: {
+          challenge: true
+        }
+      })
+      
+      // 如果挑战刚刚完成，添加积分奖励
+      if (justCompleted) {
+        await this.addPoints(userId, updatedChallenge.challenge.points, PointTransactionType.CHALLENGE_COMPLETED, `完成挑战: ${updatedChallenge.challenge.title}`)
         
         // 检查挑战相关的成就
-        await this.checkChallengeAchievements(userId, newUserChallenge.challenge.type)
+        await this.checkChallengeAchievements(userId, updatedChallenge.challenge.type)
       }
       
-      return newUserChallenge
+      return updatedChallenge
+    } catch (error: unknown) {
+      console.error('更新挑战进度失败:', error)
+      throw error
     }
-    
-    // 更新现有挑战记录
-    const wasCompleted = userChallenge.completed
-    const isCompleted = progress >= 100
-    const justCompleted = isCompleted && !wasCompleted
-    
-    const updatedChallenge = await prisma.userDailyChallenge.update({
-      where: {
-        userId_challengeId: {
-          userId,
-          challengeId
-        }
-      },
-      data: {
-        progress,
-        completed: isCompleted,
-        ...(justCompleted ? { completedAt: new Date() } : {})
-      },
-      include: {
-        challenge: true
-      }
-    })
-    
-    // 如果挑战刚刚完成，添加积分奖励
-    if (justCompleted) {
-      await this.addPoints(userId, updatedChallenge.challenge.points, PointTransactionType.CHALLENGE_COMPLETED, `完成挑战: ${updatedChallenge.challenge.title}`)
-      
-      // 检查挑战相关的成就
-      await this.checkChallengeAchievements(userId, updatedChallenge.challenge.type)
-    }
-    
-    return updatedChallenge
   }
 
   /**
@@ -1011,7 +1063,7 @@ export class GamificationService {
     }
     
     // 构建查询条件
-    let orderBy: Record<string, any> = {}
+    let orderBy: Record<string, 'asc' | 'desc' | Record<string, 'asc' | 'desc'>> = {}
     switch (type) {
       case LeaderboardType.POINTS:
         orderBy = { profile: { points: 'desc' } }
@@ -1078,7 +1130,21 @@ export class GamificationService {
     
     // 如果没有条目或条目过期，生成新的排行榜
     if (entries.length === 0) {
-      entries = await this.generateLeaderboardEntries(leaderboard.id, type, period, periodStart, periodEnd, limit)
+      const completeEntries = await this.generateLeaderboardEntries(leaderboard.id, type, period, periodStart, periodEnd, limit)
+      
+      // 将 CompleteLeaderboardEntry 转换为 LeaderboardEntry
+      entries = completeEntries.map(entry => ({
+        id: entry.id,
+        leaderboardId: entry.leaderboardId,
+        userId: entry.userId,
+        rank: entry.rank,
+        score: entry.score,
+        periodStart: entry.periodStart,
+        periodEnd: entry.periodEnd,
+        createdAt: entry.createdAt,
+        user: entry.user,
+        profile: entry.profile
+      }))
     }
     
     return entries
@@ -1088,13 +1154,13 @@ export class GamificationService {
    * 生成排行榜条目
    */
   private async generateLeaderboardEntries(
-    leaderboardId: string, 
-    type: LeaderboardType, 
+    leaderboardId: string,
+    type: LeaderboardType,
     period: LeaderboardPeriod,
     periodStart: Date,
     periodEnd: Date,
     limit: number
-  ): Promise<LeaderboardEntry[]> {
+  ): Promise<CompleteLeaderboardEntry[]> {
     // 根据类型生成不同的排行榜数据
     let profiles: LeaderboardProfile[]
     
@@ -1149,38 +1215,70 @@ export class GamificationService {
         break
       case LeaderboardType.REVIEW_COUNT:
         // 计算每个用户在指定时间段的复习次数
-        profiles = await prisma.$queryRaw`
-          SELECT 
+        const reviewCountProfiles = await prisma.$queryRaw`
+          SELECT
             gp.id, gp.userId, gp.level, gp.points, gp.streak,
             u.username, u.name, u.avatar,
             COUNT(r.id) as score
           FROM gamification_profiles gp
           JOIN users u ON gp.userId = u.id
-          LEFT JOIN reviews r ON gp.userId = r.userId 
-            AND r.reviewTime >= ${periodStart} 
+          LEFT JOIN reviews r ON gp.userId = r.userId
+            AND r.reviewTime >= ${periodStart}
             AND r.reviewTime <= ${periodEnd}
           GROUP BY gp.id, gp.userId, gp.level, gp.points, gp.streak, u.username, u.name, u.avatar
           ORDER BY score DESC
           LIMIT ${limit}
-        `
+        ` as LeaderboardQueryResult[]
+        
+        // 将查询结果转换为 LeaderboardProfile 格式
+        profiles = reviewCountProfiles.map(p => ({
+          id: p.id,
+          userId: p.userId,
+          level: p.level,
+          points: p.points,
+          streak: p.streak,
+          user: {
+            id: p.userId,
+            username: p.username,
+            name: p.name,
+            avatar: p.avatar
+          },
+          score: p.score
+        }))
         break
       case LeaderboardType.ACCURACY:
         // 计算每个用户在指定时间段的复习准确率
-        profiles = await prisma.$queryRaw`
-          SELECT 
+        const accuracyProfiles = await prisma.$queryRaw`
+          SELECT
             gp.id, gp.userId, gp.level, gp.points, gp.streak,
             u.username, u.name, u.avatar,
             AVG(r.reviewScore) as score
           FROM gamification_profiles gp
           JOIN users u ON gp.userId = u.id
-          LEFT JOIN reviews r ON gp.userId = r.userId 
-            AND r.reviewTime >= ${periodStart} 
+          LEFT JOIN reviews r ON gp.userId = r.userId
+            AND r.reviewTime >= ${periodStart}
             AND r.reviewTime <= ${periodEnd}
             AND r.reviewScore IS NOT NULL
           GROUP BY gp.id, gp.userId, gp.level, gp.points, gp.streak, u.username, u.name, u.avatar
           ORDER BY score DESC
           LIMIT ${limit}
-        `
+        ` as LeaderboardQueryResult[]
+        
+        // 将查询结果转换为 LeaderboardProfile 格式
+        profiles = accuracyProfiles.map(p => ({
+          id: p.id,
+          userId: p.userId,
+          level: p.level,
+          points: p.points,
+          streak: p.streak,
+          user: {
+            id: p.userId,
+            username: p.username,
+            name: p.name,
+            avatar: p.avatar
+          },
+          score: p.score
+        }))
         break
       default:
         profiles = await prisma.gamificationProfile.findMany({
@@ -1200,19 +1298,11 @@ export class GamificationService {
     }
     
     // 创建排行榜条目
-    const entries: LeaderboardEntry[] = []
+    const entries: CompleteLeaderboardEntry[] = []
     
     for (let i = 0; i < profiles.length; i++) {
       const profile = profiles[i]
       
-      // 添加详细日志记录关键参数
-      console.log(`[DEBUG] generateLeaderboardEntries - 检查条目 existence:`, {
-        leaderboardId,
-        userId: profile.userId,
-        periodStart: periodStart.toISOString(),
-        periodEnd: periodEnd.toISOString()
-      });
-
       // 检查是否已存在相同的 userId 和 leaderboardId 的条目
       // 注意：数据库的唯一性约束只基于 leaderboardId 和 userId，不包括时间范围
       const existingEntry = await prisma.leaderboardEntry.findFirst({
@@ -1222,27 +1312,13 @@ export class GamificationService {
         }
       });
 
-      console.log(`[DEBUG] generateLeaderboardEntries - 修改后的查询条件:`, {
-        leaderboardId,
-        userId: profile.userId
-      });
-
-      console.log(`[DEBUG] generateLeaderboardEntries - 查询结果:`, {
-        found: !!existingEntry,
-        entry: existingEntry ? {
-          id: existingEntry.id,
-          leaderboardId: existingEntry.leaderboardId,
-          userId: existingEntry.userId,
-          periodStart: existingEntry.periodStart.toISOString(),
-          periodEnd: existingEntry.periodEnd.toISOString()
-        } : null
-      });
+      console.log(`[DEBUG] 检查排行榜条目: leaderboardId=${leaderboardId}, userId=${profile.userId}, found=${!!existingEntry}`);
       
-      let entry: LeaderboardEntry
-      
+      let entry: CompleteLeaderboardEntry
+       
       if (existingEntry) {
         // 如果条目已存在，则更新现有条目
-        entry = await prisma.leaderboardEntry.update({
+        const updatedEntry = await prisma.leaderboardEntry.update({
           where: {
             id: existingEntry.id
           },
@@ -1251,32 +1327,34 @@ export class GamificationService {
             score: Math.round(profile.score || profile.points || profile.level || profile.streak || 0),
             periodStart,
             periodEnd
-          },
-          include: {
-            user: {
-              select: {
-                id: true,
-                username: true,
-                name: true,
-                avatar: true
-              }
-            },
-            profile: true
           }
-        })
+        });
+        
+        // 构建完整的排行榜条目，包含所需的 user 和 profile 属性
+        entry = {
+          ...updatedEntry,
+          user: {
+            id: profile.userId,
+            username: profile.user.username,
+            name: profile.user.name ?? null,
+            avatar: profile.user.avatar ?? null
+          },
+          profile: {
+            id: profile.id,
+            userId: profile.userId,
+            level: profile.level,
+            points: profile.points,
+            experience: 0,
+            streak: profile.streak,
+            lastActiveAt: new Date()
+          }
+        };
       } else {
         // 如果条目不存在，则创建新条目
-        console.log(`[DEBUG] generateLeaderboardEntries - 创建新条目:`, {
-          leaderboardId,
-          userId: profile.userId,
-          rank: i + 1,
-          score: Math.round(profile.score || profile.points || profile.level || profile.streak || 0),
-          periodStart: periodStart.toISOString(),
-          periodEnd: periodEnd.toISOString()
-        });
+        console.log(`[DEBUG] 创建新排行榜条目: leaderboardId=${leaderboardId}, userId=${profile.userId}, rank=${i + 1}`);
 
         try {
-          entry = await prisma.leaderboardEntry.create({
+          const createdEntry = await prisma.leaderboardEntry.create({
             data: {
               leaderboardId,
               userId: profile.userId,
@@ -1284,32 +1362,32 @@ export class GamificationService {
               score: Math.round(profile.score || profile.points || profile.level || profile.streak || 0),
               periodStart,
               periodEnd
-            },
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  username: true,
-                  name: true,
-                  avatar: true
-                }
-              },
-              profile: true
             }
           });
           
-          console.log(`[DEBUG] generateLeaderboardEntries - 新条目创建成功:`, {
-            id: entry.id,
-            leaderboardId: entry.leaderboardId,
-            userId: entry.userId
-          });
-        } catch (error: any) {
-          console.error(`[DEBUG] generateLeaderboardEntries - 创建新条目失败:`, {
-            error: error.message,
-            code: error.code,
-            leaderboardId,
-            userId: profile.userId
-          });
+          // 构建完整的排行榜条目，包含所需的 user 和 profile 属性
+          entry = {
+            ...createdEntry,
+            user: {
+              id: profile.userId,
+              username: profile.user.username,
+              name: profile.user.name ?? null,
+              avatar: profile.user.avatar ?? null
+            },
+            profile: {
+              id: profile.id,
+              userId: profile.userId,
+              level: profile.level,
+              points: profile.points,
+              experience: 0,
+              streak: profile.streak,
+              lastActiveAt: new Date()
+            }
+          };
+          
+          console.log(`[DEBUG] 新排行榜条目创建成功: id=${entry.id}, userId=${entry.userId}`);
+        } catch (error: unknown) {
+          console.error(`[DEBUG] 创建排行榜条目失败: userId=${profile.userId}, error=${error instanceof Error ? error.message : String(error)}`);
           throw error;
         }
       }
@@ -1372,16 +1450,16 @@ export class GamificationService {
    */
   async initializeDefaultAchievements(): Promise<void> {
     const defaultAchievements = [
-      { name: '初学者', description: '完成第一次复习', category: '复习', points: 50, condition: '完成第一次复习' },
-      { name: '复习达人', description: '完成100次复习', category: '复习', points: 200, condition: '完成100次复习' },
-      { name: '复习大师', description: '完成1000次复习', category: '复习', points: 500, condition: '完成1000次复习' },
-      { name: '连续一周', description: '连续学习7天', category: '连续学习', points: 100, condition: '连续学习7天' },
-      { name: '连续一月', description: '连续学习30天', category: '连续学习', points: 300, condition: '连续学习30天' },
-      { name: '等级5', description: '达到5级', category: '等级', points: 150, condition: '达到5级' },
-      { name: '等级10', description: '达到10级', category: '等级', points: 300, condition: '达到10级' },
-      { name: '积分达人', description: '累积1000积分', category: '积分', points: 200, condition: '累积1000积分' },
-      { name: '挑战者', description: '完成第一个每日挑战', category: '挑战', points: 100, condition: '完成第一个每日挑战' },
-      { name: '挑战大师', description: '完成50个每日挑战', category: '挑战', points: 400, condition: '完成50个每日挑战' }
+      { name: '初学者', description: '完成第一次复习', category: '复习', points: 50, condition: '完成第一次复习', type: AchievementType.MILESTONE },
+      { name: '复习达人', description: '完成100次复习', category: '复习', points: 200, condition: '完成100次复习', type: AchievementType.MILESTONE },
+      { name: '复习大师', description: '完成1000次复习', category: '复习', points: 500, condition: '完成1000次复习', type: AchievementType.MILESTONE },
+      { name: '连续一周', description: '连续学习7天', category: '连续学习', points: 100, condition: '连续学习7天', type: AchievementType.MILESTONE },
+      { name: '连续一月', description: '连续学习30天', category: '连续学习', points: 300, condition: '连续学习30天', type: AchievementType.MILESTONE },
+      { name: '等级5', description: '达到5级', category: '等级', points: 150, condition: '达到5级', type: AchievementType.MILESTONE },
+      { name: '等级10', description: '达到10级', category: '等级', points: 300, condition: '达到10级', type: AchievementType.MILESTONE },
+      { name: '积分达人', description: '累积1000积分', category: '积分', points: 200, condition: '累积1000积分', type: AchievementType.MILESTONE },
+      { name: '挑战者', description: '完成第一个每日挑战', category: '挑战', points: 100, condition: '完成第一个每日挑战', type: AchievementType.MILESTONE },
+      { name: '挑战大师', description: '完成50个每日挑战', category: '挑战', points: 400, condition: '完成50个每日挑战', type: AchievementType.MILESTONE }
     ]
     
     for (const achievementData of defaultAchievements) {

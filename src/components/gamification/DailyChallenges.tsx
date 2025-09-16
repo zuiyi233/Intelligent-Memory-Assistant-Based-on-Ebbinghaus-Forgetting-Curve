@@ -1,11 +1,9 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Target, CheckCircle, Clock, Gift, Trophy, Sparkles, Zap } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Target, CheckCircle, Clock, Gift, Zap } from 'lucide-react'
 import { DailyChallenge, UserDailyChallenge } from '@prisma/client'
-import { cn } from '@/lib/utils'
 
 interface DailyChallengesProps {
   userId: string
@@ -28,7 +26,7 @@ export function DailyChallenges({ userId, onUpdateChallengeProgress, onClaimChal
         const challenges = await response.json()
         
         setDailyChallenges(challenges)
-        setUserChallenges(challenges.map((c: any) => c.userChallenges?.[0] || { 
+        setUserChallenges(challenges.map((c: DailyChallenge & { userChallenges?: UserDailyChallenge[] }) => c.userChallenges?.[0] || {
           progress: 0, 
           completed: false, 
           claimed: false 
@@ -67,7 +65,7 @@ export function DailyChallenges({ userId, onUpdateChallengeProgress, onClaimChal
         const updatedResponse = await fetch(`/api/gamification/challenges?userId=${userId}`)
         if (updatedResponse.ok) {
           const updatedChallenges = await updatedResponse.json()
-          setUserChallenges(updatedChallenges.map((c: any) => c.userChallenges?.[0] || { 
+          setUserChallenges(updatedChallenges.map((c: DailyChallenge & { userChallenges?: UserDailyChallenge[] }) => c.userChallenges?.[0] || {
             progress: 0, 
             completed: false, 
             claimed: false 

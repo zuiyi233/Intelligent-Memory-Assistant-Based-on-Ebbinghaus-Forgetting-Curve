@@ -11,25 +11,9 @@ interface GamificationNotification {
 }
 
 export function GamificationNotifications() {
-  const [notifications, setNotifications] = useState<GamificationNotification[]>([]);
+  const [notifications] = useState<GamificationNotification[]>([]);
   const [visibleNotifications, setVisibleNotifications] = useState<string[]>([]);
 
-  // 添加新通知
-  const addNotification = (notification: Omit<GamificationNotification, "id" | "timestamp">) => {
-    const newNotification: GamificationNotification = {
-      ...notification,
-      id: crypto.randomUUID(),
-      timestamp: new Date()
-    };
-    
-    setNotifications(prev => [newNotification, ...prev]);
-    setVisibleNotifications(prev => [...prev, newNotification.id]);
-    
-    // 5秒后自动隐藏
-    setTimeout(() => {
-      setVisibleNotifications(prev => prev.filter(id => id !== newNotification.id));
-    }, 5000);
-  };
 
   // 监听游戏化事件
   useEffect(() => {
@@ -112,10 +96,6 @@ export function GamificationNotifications() {
   );
 }
 
-// 导出单例实例和通知函数
-const notificationInstance: {
-  addNotification: (notification: Omit<GamificationNotification, "id" | "timestamp">) => void;
-} | null = null;
 
 export const initGamificationNotifications = () => {
   // 在实际应用中，这里可以初始化通知系统
