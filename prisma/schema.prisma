@@ -1,0 +1,113 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 用户模型
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  username      String    @unique
+  password      String
+  name          String?
+  avatar        String?
+  isActive      Boolean   @default(true)
+  isPremium     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // 关联关系
+  memoryContents MemoryContent[]
+  activationCodes ActivationCode[]
+  reviews        Review[]
+  
+  @@map("users")
+}
+
+// 激活码模型
+model ActivationCode {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  type      ActivationCodeType
+  status    ActivationCodeStatus @default(AVAILABLE)
+  userId    String?
+  expiresAt DateTime?
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 关联关系
+  user User? @relation(fields: [userId], references: [id])
+  
+  @@map("activation_codes")
+}
+
+// 记忆内容模型
+model MemoryContent {
+  id          String      @id @default(cuid())
+  title       String
+  content     String
+  category    String      @default("default")
+  tags        String[]
+  difficulty  Int         @default(1) // 1-5 难度等级
+  priority    Int         @default(3) // 1-5 优先级
+  status      MemoryStatus @default(ACTIVE)
+  startTime   DateTime?
+  userId      String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // 关联关系
+  user    User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviews Review[]
+  
+  @@map("memory_contents")
+}
+
+// 复习记录模型
+model Review {
+  id           String     @id @default(cuid())
+  cycleNumber  Int        // 第几次复习 (1-9 对应艾宾浩斯曲线的9个时间点)
+  reviewTime   DateTime   @default(now())
+  isCompleted  Boolean    @default(false)
+  reviewScore  Int?       // 复习得分 1-5
+  notes        String?
+  nextReviewAt DateTime?
+  userId       String
+  memoryContentId String
+  
+  // 关联关系
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memoryContent MemoryContent @relation(fields: [memoryContentId], references: [id], onDelete: Cascade)
+  
+  @@map("reviews")
+}
+
+// 枚举定义
+enum ActivationCodeType {
+  PREMIUM_MONTH
+  PREMIUM_YEAR
+  LIFETIME
+  TRIAL
+}
+
+enum ActivationCodeStatus {
+  AVAILABLE
+  USED
+  EXPIRED
+  CANCELLED
+}
+
+enum MemoryStatus {
+  ACTIVE
+  COMPLETED
+  PAUSED
+  ARCHIVED
+}
