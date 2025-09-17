@@ -581,27 +581,53 @@ export function AchievementSystem({ userId, achievements: externalAchievements, 
   }
   
   // 动态背景效果组件
-  const DynamicBackground = () => (
-    <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 opacity-50" />
-      <div className="absolute top-0 left-0 w-full h-full">
-        {[...Array(20)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute rounded-full bg-gradient-to-r from-blue-200 to-purple-200 opacity-20"
-            style={{
-              width: `${Math.random() * 100 + 50}px`,
-              height: `${Math.random() * 100 + 50}px`,
-              top: `${Math.random() * 100}%`,
-              left: `${Math.random() * 100}%`,
-              animation: `float ${Math.random() * 10 + 10}s ease-in-out infinite`,
-              animationDelay: `${Math.random() * 5}s`
-            }}
-          />
-        ))}
+  const DynamicBackground = () => {
+    const [backgroundElements, setBackgroundElements] = useState<Array<{
+      id: number
+      width: number
+      height: number
+      top: number
+      left: number
+      animationDuration: number
+      animationDelay: number
+    }>>([])
+
+    // 在客户端生成随机值
+    useEffect(() => {
+      const elements = [...Array(20)].map((_, i) => ({
+        id: i,
+        width: Math.random() * 100 + 50,
+        height: Math.random() * 100 + 50,
+        top: Math.random() * 100,
+        left: Math.random() * 100,
+        animationDuration: Math.random() * 10 + 10,
+        animationDelay: Math.random() * 5
+      }))
+      setBackgroundElements(elements)
+    }, [])
+
+    return (
+      <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 opacity-50" />
+        <div className="absolute top-0 left-0 w-full h-full">
+          {backgroundElements.map((element) => (
+            <div
+              key={element.id}
+              className="absolute rounded-full bg-gradient-to-r from-blue-200 to-purple-200 opacity-20"
+              style={{
+                width: `${element.width}px`,
+                height: `${element.height}px`,
+                top: `${element.top}%`,
+                left: `${element.left}%`,
+                animation: `float ${element.animationDuration}s ease-in-out infinite`,
+                animationDelay: `${element.animationDelay}s`
+              }}
+            />
+          ))}
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <div className={cn("relative min-h-screen", className)}>

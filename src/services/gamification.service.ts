@@ -17,6 +17,16 @@ import {
 } from '@prisma/client'
 import { gamificationEventHandler } from './gamificationEventHandler.service'
 import { gamificationABTestingInterceptorService } from './gamificationABTestingInterceptor.service'
+import {
+  RewardItem,
+  UserReward,
+  RewardCategory,
+  RewardType,
+  RewardStatus,
+  RewardStoreQueryParams,
+  RewardClaimRequest,
+  RewardClaimResponse
+} from '@/types'
 
 // 定义成就检查数据类型
 type AchievementCheckData = {
@@ -1780,25 +1790,26 @@ export class GamificationService {
     const assignedChallenges: UserDailyChallenge[] = []
     
     for (const challenge of dailyChallenges) {
-      // 检查用户是否已经有这个挑战
-      let existing: UserDailyChallenge | null = null
       try {
-        existing = await prisma.userDailyChallenge.findUnique({
-          where: {
-            userId_challengeId: {
-              userId,
-              challengeId: challenge.id
+        // 使用事务确保操作的原子性
+        const userChallenge = await prisma.$transaction(async (tx) => {
+          // 检查用户是否已经有这个挑战
+          const existing = await tx.userDailyChallenge.findUnique({
+            where: {
+              userId_challengeId: {
+                userId,
+                challengeId: challenge.id
+              }
             }
+          })
+          
+          if (existing) {
+            // 如果已存在，直接返回现有记录
+            return existing
           }
-        })
-      } catch (error) {
-        console.error('查询用户挑战失败:', error)
-        throw new Error(`查询用户挑战失败: ${error instanceof Error ? error.message : '未知错误'}`)
-      }
-      
-      if (!existing) {
-        try {
-          const userChallenge = await prisma.userDailyChallenge.create({
+          
+          // 如果不存在，创建新记录
+          return await tx.userDailyChallenge.create({
             data: {
               userId,
               challengeId: challenge.id,
@@ -1810,11 +1821,39 @@ export class GamificationService {
               challenge: true
             }
           })
+        })
+        
+        assignedChallenges.push(userChallenge)
+      } catch (error) {
+        // 检查是否是唯一约束违反错误
+        if (error instanceof Error && error.message.includes('Unique constraint failed')) {
+          console.warn(`用户 ${userId} 的挑战 ${challenge.id} 已存在，尝试获取现有记录`)
           
-          assignedChallenges.push(userChallenge)
-        } catch (error) {
-          console.error('创建用户挑战失败:', error)
-          throw new Error(`创建用户挑战失败: ${error instanceof Error ? error.message : '未知错误'}`)
+          // 如果是唯一约束违反，说明记录已被其他请求创建，尝试获取现有记录
+          try {
+            const existing = await prisma.userDailyChallenge.findUnique({
+              where: {
+                userId_challengeId: {
+                  userId,
+                  challengeId: challenge.id
+                }
+              },
+              include: {
+                challenge: true
+              }
+            })
+            
+            if (existing) {
+              assignedChallenges.push(existing)
+            } else {
+              console.error(`无法找到用户 ${userId} 的挑战 ${challenge.id} 的现有记录`)
+            }
+          } catch (fetchError) {
+            console.error('获取现有用户挑战失败:', fetchError)
+          }
+        } else {
+          console.error('分配用户挑战失败:', error)
+          throw new Error(`分配用户挑战失败: ${error instanceof Error ? error.message : '未知错误'}`)
         }
       }
     }
@@ -2331,6 +2370,543 @@ export class GamificationService {
       }))
     } catch (error) {
       console.error('获取挑战排行榜失败:', error)
+      throw error
+    }
+  }
+  /**
+   * 获取奖励物品列表
+   */
+  async getRewardItems(params: RewardStoreQueryParams = {}): Promise<{
+    items: RewardItem[]
+    total: number
+    page: number
+    limit: number
+    totalPages: number
+  }> {
+    try {
+      const {
+        category,
+        type,
+        isActive = true,
+        minPrice,
+        maxPrice,
+        search,
+        sortBy = 'createdAt',
+        sortOrder = 'desc',
+        page = 1,
+        limit = 20
+      } = params
+
+      const skip = (page - 1) * limit
+
+      // 构建查询条件
+      const where: any = {
+        isActive
+      }
+
+      if (category) {
+        where.category = category
+      }
+
+      if (type) {
+        where.type = type
+      }
+
+      if (minPrice !== undefined || maxPrice !== undefined) {
+        where.price = {}
+        if (minPrice !== undefined) {
+          where.price.gte = minPrice
+        }
+        if (maxPrice !== undefined) {
+          where.price.lte = maxPrice
+        }
+      }
+
+      if (search) {
+        where.OR = [
+          { name: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } }
+        ]
+      }
+
+      // 构建排序条件
+      const orderBy: any = {}
+      orderBy[sortBy] = sortOrder
+
+      // 获取奖励物品列表
+      const [items, total] = await Promise.all([
+        prisma.rewardItem.findMany({
+          where,
+          orderBy,
+          skip,
+          take: limit
+        }),
+        prisma.rewardItem.count({ where })
+      ])
+
+      const totalPages = Math.ceil(total / limit)
+
+      return {
+        items,
+        total,
+        page,
+        limit,
+        totalPages
+      }
+    } catch (error: unknown) {
+      console.error('获取奖励物品列表失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 获取奖励物品详情
+   */
+  async getRewardItemById(id: string): Promise<RewardItem | null> {
+    try {
+      return await prisma.rewardItem.findUnique({
+        where: { id },
+        include: {
+          userRewards: {
+            take: 5,
+            orderBy: { createdAt: 'desc' }
+          }
+        }
+      })
+    } catch (error: unknown) {
+      console.error('获取奖励物品详情失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 创建奖励物品
+   */
+  async createRewardItem(data: {
+    name: string
+    description: string
+    icon?: string
+    category: RewardCategory
+    type: RewardType
+    price: number
+    stock?: number
+    expiresAt?: Date
+    metadata?: Record<string, unknown>
+  }): Promise<RewardItem> {
+    try {
+      return await prisma.rewardItem.create({
+        data: {
+          name: data.name,
+          description: data.description,
+          icon: data.icon,
+          category: data.category,
+          type: data.type,
+          price: data.price,
+          stock: data.stock || 0,
+          expiresAt: data.expiresAt,
+          metadata: data.metadata
+        }
+      })
+    } catch (error: unknown) {
+      console.error('创建奖励物品失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 更新奖励物品
+   */
+  async updateRewardItem(
+    id: string,
+    data: {
+      name?: string
+      description?: string
+      icon?: string
+      category?: RewardCategory
+      type?: RewardType
+      price?: number
+      stock?: number
+      isActive?: boolean
+      expiresAt?: Date
+      metadata?: Record<string, unknown>
+    }
+  ): Promise<RewardItem> {
+    try {
+      return await prisma.rewardItem.update({
+        where: { id },
+        data
+      })
+    } catch (error: unknown) {
+      console.error('更新奖励物品失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 删除奖励物品
+   */
+  async deleteRewardItem(id: string): Promise<void> {
+    try {
+      await prisma.rewardItem.delete({
+        where: { id }
+      })
+    } catch (error: unknown) {
+      console.error('删除奖励物品失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 兑换奖励
+   */
+  async claimReward(userId: string, request: RewardClaimRequest): Promise<RewardClaimResponse> {
+    try {
+      const { rewardItemId, quantity = 1 } = request
+
+      // 获取奖励物品信息
+      const rewardItem = await prisma.rewardItem.findUnique({
+        where: { id: rewardItemId }
+      })
+
+      if (!rewardItem) {
+        return {
+          success: false,
+          error: '奖励物品不存在'
+        }
+      }
+
+      if (!rewardItem.isActive) {
+        return {
+          success: false,
+          error: '奖励物品已下架'
+        }
+      }
+
+      // 检查是否过期
+      if (rewardItem.expiresAt && new Date() > rewardItem.expiresAt) {
+        return {
+          success: false,
+          error: '奖励物品已过期'
+        }
+      }
+
+      // 检查库存
+      if (rewardItem.stock > 0 && rewardItem.stock < quantity) {
+        return {
+          success: false,
+          error: '库存不足'
+        }
+      }
+
+      // 获取用户信息
+      const profile = await this.getOrCreateProfile(userId)
+
+      // 检查积分是否足够
+      const totalCost = rewardItem.price * quantity
+      if (profile.points < totalCost) {
+        return {
+          success: false,
+          error: '积分不足'
+        }
+      }
+
+      // 检查是否已经兑换过（对于一次性奖励）
+      if (rewardItem.type === RewardType.ONE_TIME) {
+        const existingReward = await prisma.userReward.findFirst({
+          where: {
+            userId,
+            rewardItemId,
+            status: {
+              not: RewardStatus.CANCELLED
+            }
+          }
+        })
+
+        if (existingReward) {
+          return {
+            success: false,
+            error: '该奖励只能兑换一次'
+          }
+        }
+      }
+
+      // 扣除积分
+      await this.deductPoints(userId, totalCost, PointTransactionType.MANUAL_ADJUST, `兑换奖励: ${rewardItem.name}`)
+
+      // 更新库存
+      if (rewardItem.stock > 0) {
+        await prisma.rewardItem.update({
+          where: { id: rewardItemId },
+          data: {
+            stock: rewardItem.stock - quantity
+          }
+        })
+      }
+
+      // 创建用户奖励记录
+      const userReward = await prisma.userReward.create({
+        data: {
+          userId,
+          rewardItemId,
+          status: RewardStatus.PENDING,
+          expiresAt: rewardItem.expiresAt,
+          metadata: {
+            quantity,
+            totalCost
+          }
+        }
+      })
+
+      // 处理奖励发放逻辑
+      await this.processRewardFulfillment(userId, rewardItemId, userReward.id)
+
+      return {
+        success: true,
+        userReward,
+        message: '奖励兑换成功'
+      }
+    } catch (error: unknown) {
+      console.error('兑换奖励失败:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '兑换奖励失败'
+      }
+    }
+  }
+
+  /**
+   * 处理奖励发放逻辑
+   */
+  private async processRewardFulfillment(userId: string, rewardItemId: string, userRewardId: string): Promise<void> {
+    try {
+      const rewardItem = await prisma.rewardItem.findUnique({
+        where: { id: rewardItemId }
+      })
+
+      if (!rewardItem) return
+
+      // 根据奖励类型处理不同的发放逻辑
+      switch (rewardItem.category) {
+        case RewardCategory.VIRTUAL_GOODS:
+          // 虚拟商品直接标记为已完成
+          await prisma.userReward.update({
+            where: { id: userRewardId },
+            data: {
+              status: RewardStatus.COMPLETED,
+              claimedAt: new Date()
+            }
+          })
+          break
+
+        case RewardCategory.EXPERIENCE:
+          // 经验值加成
+          const experienceBonus = rewardItem.metadata?.experienceBonus as number || 100
+          await this.addExperience(userId, experienceBonus)
+          
+          await prisma.userReward.update({
+            where: { id: userRewardId },
+            data: {
+              status: RewardStatus.COMPLETED,
+              claimedAt: new Date()
+            }
+          })
+          break
+
+        case RewardCategory.BADGE:
+          // 徽章奖励，触发成就系统
+          await this.unlockAchievement(userId, rewardItem.name)
+          
+          await prisma.userReward.update({
+            where: { id: userRewardId },
+            data: {
+              status: RewardStatus.COMPLETED,
+              claimedAt: new Date()
+            }
+          })
+          break
+
+        case RewardCategory.PREMIUM_FEATURE:
+          // 高级功能，可能需要额外的处理逻辑
+          await prisma.userReward.update({
+            where: { id: userRewardId },
+            data: {
+              status: RewardStatus.COMPLETED,
+              claimedAt: new Date(),
+              metadata: {
+                ...rewardItem.metadata,
+                activated: true
+              }
+            }
+          })
+          break
+
+        default:
+          // 其他类型的奖励标记为待处理
+          await prisma.userReward.update({
+            where: { id: userRewardId },
+            data: {
+              status: RewardStatus.PENDING
+            }
+          })
+          break
+      }
+    } catch (error: unknown) {
+      console.error('处理奖励发放失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 获取用户的奖励列表
+   */
+  async getUserRewards(userId: string, status?: RewardStatus): Promise<UserReward[]> {
+    try {
+      const where: any = { userId }
+      
+      if (status) {
+        where.status = status
+      }
+
+      return await prisma.userReward.findMany({
+        where,
+        include: {
+          rewardItem: true
+        },
+        orderBy: { createdAt: 'desc' }
+      })
+    } catch (error: unknown) {
+      console.error('获取用户奖励列表失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 获取奖励商店统计信息
+   */
+  async getRewardStoreStats(): Promise<{
+    totalItems: number
+    activeItems: number
+    totalRewardsClaimed: number
+    mostPopularRewards: Array<{
+      itemId: string
+      name: string
+      claimCount: number
+    }>
+  }> {
+    try {
+      const [totalItems, activeItems, totalRewardsClaimed, mostPopularRewards] = await Promise.all([
+        prisma.rewardItem.count(),
+        prisma.rewardItem.count({ where: { isActive: true } }),
+        prisma.userReward.count({ where: { status: RewardStatus.COMPLETED } }),
+        
+        // 获取最受欢迎的奖励
+        prisma.userReward.groupBy({
+          by: ['rewardItemId'],
+          where: { status: RewardStatus.COMPLETED },
+          _count: { rewardItemId: true },
+          orderBy: { _count: { rewardItemId: 'desc' } },
+          take: 10
+        }).then(async (groups) => {
+          const rewardIds = groups.map(g => g.rewardItemId)
+          const rewardItems = await prisma.rewardItem.findMany({
+            where: { id: { in: rewardIds } },
+            select: { id: true, name: true }
+          })
+          
+          return groups.map(group => {
+            const rewardItem = rewardItems.find(r => r.id === group.rewardItemId)
+            return {
+              itemId: group.rewardItemId,
+              name: rewardItem?.name || '未知奖励',
+              claimCount: group._count.rewardItemId
+            }
+          })
+        })
+      ])
+
+      return {
+        totalItems,
+        activeItems,
+        totalRewardsClaimed,
+        mostPopularRewards
+      }
+    } catch (error: unknown) {
+      console.error('获取奖励商店统计信息失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 初始化默认奖励物品
+   */
+  async initializeDefaultRewards(): Promise<void> {
+    try {
+      const defaultRewards = [
+        {
+          name: '经验值加成卡',
+          description: '获得100点额外经验值',
+          icon: '/icons/experience.png',
+          category: RewardCategory.EXPERIENCE,
+          type: RewardType.ONE_TIME,
+          price: 50,
+          stock: 100,
+          metadata: { experienceBonus: 100 }
+        },
+        {
+          name: '学习达人徽章',
+          description: '展示你的学习成就',
+          icon: '/icons/badge-learning.png',
+          category: RewardCategory.BADGE,
+          type: RewardType.PERMANENT,
+          price: 100,
+          stock: 0,
+          metadata: { badgeType: 'learning' }
+        },
+        {
+          name: '连续学习加成',
+          description: '连续学习天数额外加成',
+          icon: '/icons/streak-bonus.png',
+          category: RewardCategory.PREMIUM_FEATURE,
+          type: RewardType.RECURRING,
+          price: 200,
+          stock: 50,
+          metadata: { streakMultiplier: 1.5, duration: 7 }
+        },
+        {
+          name: '主题自定义包',
+          description: '解锁所有主题自定义选项',
+          icon: '/icons/theme-custom.png',
+          category: RewardCategory.CUSTOMIZATION,
+          type: RewardType.PERMANENT,
+          price: 300,
+          stock: 0,
+          metadata: { features: ['themes', 'colors', 'fonts'] }
+        },
+        {
+          name: '高级分析功能',
+          description: '解锁高级学习分析功能',
+          icon: '/icons/analytics.png',
+          category: RewardCategory.PREMIUM_FEATURE,
+          type: RewardType.PERMANENT,
+          price: 500,
+          stock: 0,
+          metadata: { features: ['advanced-analytics', 'export-reports'] }
+        }
+      ]
+
+      for (const rewardData of defaultRewards) {
+        const existing = await prisma.rewardItem.findFirst({
+          where: { name: rewardData.name }
+        })
+
+        if (!existing) {
+          await prisma.rewardItem.create({
+            data: rewardData
+          })
+        }
+      }
+    } catch (error: unknown) {
+      console.error('初始化默认奖励物品失败:', error)
       throw error
     }
   }

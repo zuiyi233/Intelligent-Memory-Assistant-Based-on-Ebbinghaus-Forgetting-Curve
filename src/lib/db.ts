@@ -26,6 +26,11 @@ if (pgPassword && databaseUrl && !databaseUrl.includes(':') && databaseUrl.inclu
 // 创建Prisma客户端并添加错误处理
 const createPrismaClient = () => {
   if (!finalDatabaseUrl) {
+    console.error('DATABASE_URL environment variable is not defined')
+    console.error('Current environment variables:', {
+      DATABASE_URL: process.env.DATABASE_URL,
+      PGPASSWORD: process.env.PGPASSWORD ? '***' : undefined
+    })
     throw new Error('DATABASE_URL environment variable is not defined')
   }
   
@@ -56,6 +61,12 @@ const createPrismaClient = () => {
     return client
   } catch (error) {
     console.error('Failed to initialize Prisma client:', error)
+    console.error('Database connection details:', {
+      host: new URL(finalDatabaseUrl).hostname,
+      port: new URL(finalDatabaseUrl).port,
+      database: new URL(finalDatabaseUrl).pathname.replace('/', ''),
+      user: new URL(finalDatabaseUrl).username
+    })
     throw new Error(`Failed to initialize Prisma client: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 }

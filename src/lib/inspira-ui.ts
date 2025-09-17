@@ -513,13 +513,22 @@ export const gamificationEffects = {
 // Inspira UI 游戏化工具函数
 export const gamificationUtils = {
   // 格式化积分显示
-  formatPoints: (points: number) => {
-    if (points >= 1000000) {
-      return `${(points / 1000000).toFixed(1)}M`
-    } else if (points >= 1000) {
-      return `${(points / 1000).toFixed(1)}K`
+  formatPoints: (points: number | undefined | null) => {
+    if (points === undefined || points === null) {
+      return '0'
     }
-    return points.toString()
+    
+    const numPoints = Number(points)
+    if (isNaN(numPoints)) {
+      return '0'
+    }
+    
+    if (numPoints >= 1000000) {
+      return `${(numPoints / 1000000).toFixed(1)}M`
+    } else if (numPoints >= 1000) {
+      return `${(numPoints / 1000).toFixed(1)}K`
+    }
+    return numPoints.toString()
   },
   
   // 计算等级进度

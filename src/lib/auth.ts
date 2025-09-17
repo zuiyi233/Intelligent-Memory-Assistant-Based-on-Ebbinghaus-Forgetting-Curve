@@ -75,6 +75,7 @@ export const authOptions: NextAuthOptions = {
         
         return {
           ...token,
+          sub: typedUser.id, // 确保用户 ID 存储在 token.sub 中
           username: typedUser.username,
           isPremium: typedUser.isPremium,
         }
@@ -86,7 +87,7 @@ export const authOptions: NextAuthOptions = {
         ...session,
         user: {
           ...session.user,
-          id: token.sub,
+          id: token.sub, // 从 token.sub 获取用户 ID
           username: token.username,
           isPremium: token.isPremium,
         },

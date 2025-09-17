@@ -7,16 +7,15 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn, animations, cardEffects, textEffects, backgroundEffects } from '@/lib/inspira-ui'
-import { 
-  PlusIcon, 
-  ChartBarIcon, 
-  DocumentTextIcon, 
-  CogIcon, 
+import {
+  PlusIcon,
+  ChartBarIcon,
+  DocumentTextIcon,
+  CogIcon,
   TrendingUpIcon,
   UsersIcon,
   LightBulbIcon,
-  RocketLaunchIcon,
-  ArrowTrendingUpIcon
+  RocketLaunchIcon
 } from '@heroicons/react/24/outline'
 
 interface ABTestingDashboardProps {
@@ -300,7 +299,7 @@ export const ABTestingDashboard: React.FC<ABTestingDashboardProps> = ({
           initial={animations.slideIn('up', 0.6)}
           animate={animations.slideIn('up', 0.6)}
         >
-          <Tabs defaultValue="recent" className="w-full">
+          <Tabs defaultValue="recent">
             <TabsList className="grid w-full grid-cols-3 mb-6">
               <TabsTrigger value="recent" className="flex items-center gap-2">
                 <DocumentTextIcon className="h-4 w-4" />
@@ -359,7 +358,7 @@ export const ABTestingDashboard: React.FC<ABTestingDashboardProps> = ({
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <ArrowTrendingUpIcon className="h-5 w-5 text-green-500" />
+                      <TrendingUpIcon className="h-5 w-5 text-green-500" />
                       关键发现
                     </CardTitle>
                   </CardHeader>

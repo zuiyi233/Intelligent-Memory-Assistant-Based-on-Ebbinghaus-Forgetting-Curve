@@ -39,6 +39,11 @@ model User {
   createdAbTestTemplates ABTestTemplate[] @relation("ABTestTemplatesCreator")
   createdABSegments ABSegment[] @relation("ABSegmentsCreator")
   abSegments ABSegmentUser[]
+  userRewards UserReward[] @relation("UserRewardsUser")
+  personalizedConfig PersonalizedConfig?
+  userTutorialProgress UserTutorialProgress[] // 用户教程进度
+  tutorialFeedback TutorialFeedback[] // 教程反馈
+  socialShares SocialShare[] // 社交分享记录
    
   @@map("users")
 }
@@ -170,7 +175,6 @@ model UserLearningStyle {
   
   // 关联关系
   profile GamificationProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
-  userBehaviorEvents UserBehaviorEvent[] @relation("UserBehaviorEventsLearningStyle")
   
   @@map("user_learning_styles")
 }
@@ -443,7 +447,6 @@ model UserBehaviorEvent {
   
   // 关联关系
   user        User               @relation("UserBehaviorEventsUser", fields: [userId], references: [id], onDelete: Cascade, map: "user_behavior_events_user_id_fkey")
-  learningStyle UserLearningStyle? @relation("UserBehaviorEventsLearningStyle", fields: [userId], references: [userId], map: "user_behavior_events_learning_style_id_fkey")
   
   @@map("user_behavior_events")
   @@index([userId, timestamp])
@@ -620,4 +623,301 @@ model ABSegmentUser {
   
   @@unique([segmentId, userId])
   @@map("ab_segment_users")
+}
+
+// 奖励商店相关模型
+// 奖励物品模型
+model RewardItem {
+  id          String           @id @default(cuid())
+  name        String           // 奖励名称
+  description String           // 奖励描述
+  icon        String?          // 奖励图标
+  category    RewardCategory   // 奖励类别
+  type        RewardType       // 奖励类型
+  price       Int              // 所需积分
+  stock       Int              @default(0) // 库存数量，0表示无限制
+  isActive    Boolean          @default(true) // 是否上架
+  expiresAt   DateTime?        // 过期时间
+  metadata    Json?            // 额外元数据（如：兑换后的具体内容、有效期等）
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  
+  // 关联关系
+  userRewards UserReward[]
+  
+  @@map("reward_items")
+}
+
+// 用户奖励模型
+model UserReward {
+  id          String    @id @default(cuid())
+  userId      String
+  rewardItemId String
+  status      RewardStatus @default(PENDING) // 奖励状态
+  claimedAt   DateTime? // 领取时间
+  expiresAt   DateTime? // 奖励过期时间
+  metadata    Json?     // 额外元数据（如：使用状态、激活码等）
+  createdAt   DateTime  @default(now())
+  
+  // 关联关系
+  user        User       @relation("UserRewardsUser", fields: [userId], references: [id], onDelete: Cascade)
+  rewardItem  RewardItem @relation(fields: [rewardItemId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, rewardItemId])
+  @@map("user_rewards")
+}
+
+// 奖励类别枚举
+enum RewardCategory {
+  VIRTUAL_GOODS    // 虚拟商品
+  PHYSICAL_GOODS   // 实物商品
+  DISCOUNT         // 折扣券
+  PREMIUM_FEATURE  // 高级功能
+  CUSTOMIZATION    // 自定义选项
+  BADGE           // 徽章
+  EXPERIENCE      // 经验值加成
+}
+
+// 奖励类型枚举
+enum RewardType {
+  ONE_TIME         // 一次性奖励
+  RECURRING        // 定期奖励
+  PERMANENT        // 永久奖励
+  LIMITED          // 限时奖励
+}
+
+// 奖励状态枚举
+enum RewardStatus {
+  PENDING          // 待处理
+  COMPLETED        // 已完成
+  EXPIRED          // 已过期
+  CANCELLED        // 已取消
+}
+
+// 个性化配置相关模型
+// 个性化配置模型
+model PersonalizedConfig {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  difficulty   Json?    // 难度配置
+  notifications Json?   // 通知配置
+  theme        Json?    // 主题配置
+  preferences  Json?    // 其他偏好设置
+  learningStyleAdaptation Json? // 学习风格适配配置
+  lastUpdatedAt DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  
+  // 关联关系
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   
+  @@map("personalized_configs")
+}
+
+// 难度配置枚举
+enum DifficultyLevel {
+  EASY       // 简单
+  MEDIUM     // 中等
+  HARD       // 困难
+  ADAPTIVE   // 自适应
+}
+
+// 通知类型枚举
+enum NotificationType {
+  REMINDER        // 提醒
+  ACHIEVEMENT     // 成就
+  CHALLENGE       // 挑战
+  STREAK          // 连续学习
+  LEVEL_UP        // 升级
+  POINTS_EARNED   // 获得积分
+  DAILY_SUMMARY   // 每日总结
+  WEEKLY_REPORT   // 周报
+}
+
+// 通知方式枚举
+enum NotificationMethod {
+  IN_APP        // 应用内通知
+  EMAIL         // 邮件
+  PUSH          // 推送通知
+  SMS           // 短信
+}
+
+// 主题风格枚举
+enum ThemeStyle {
+  LIGHT          // 浅色主题
+  DARK           // 深色主题
+  AUTO           // 自动主题
+  CUSTOM         // 自定义主题
+}
+
+// 学习风格适配策略枚举
+enum LearningStyleAdaptationStrategy {
+  VISUAL_FOCUS    // 视觉焦点
+  AUDITORY_FOCUS  // 听觉焦点
+  KINESTHETIC_FOCUS // 动觉焦点
+  READING_FOCUS   // 阅读焦点
+  BALANCED        // 平衡策略
+}
+
+// 社交分享相关模型
+// 社交分享记录模型
+model SocialShare {
+  id          String   @id @default(cuid())
+  userId      String
+  platform    String   // 分享平台
+  contentType String   // 分享内容类型
+  contentId   String   // 内容ID
+  shareText   String   // 分享文本
+  shareImage  String?  // 分享图片URL
+  sharedAt    DateTime @default(now()) // 分享时间
+  
+  // 关联关系
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("social_shares")
+  @@index([userId, sharedAt])
+}
+
+// 新手引导/教程相关模型
+// 教程模型
+model Tutorial {
+ id          String           @id @default(cuid())
+ name        String           // 教程名称
+ description String           // 教程描述
+ category    TutorialCategory  // 教程类别
+ audience    TutorialAudience // 目标受众
+ difficulty  DifficultyLevel   // 教程难度
+ estimatedTime Int            // 预估完成时间（分钟）
+ points      Int              @default(0) // 完成获得的积分
+ order       Int              @default(0) // 显示顺序
+ isActive    Boolean          @default(true) // 是否激活
+ tags        String[]         // 标签
+ prerequisites Json?          // 前置条件
+ steps       TutorialStep[]   // 关联的步骤
+ userProgress UserTutorialProgress[] // 用户进度记录
+ feedback    TutorialFeedback[] // 用户反馈
+ createdAt   DateTime         @default(now())
+ updatedAt   DateTime         @updatedAt
+ 
+ @@map("tutorials")
+}
+
+// 教程步骤模型
+model TutorialStep {
+ id          String        @id @default(cuid())
+ tutorialId  String        // 关联的教程ID
+ title       String        // 步骤标题
+ content     String        // 步骤内容
+ type        TutorialStepType // 步骤类型
+ position    String        // 位置指示器
+ target      String?       // 目标元素选择器
+ order       Int           // 步骤顺序
+ isRequired  Boolean       @default(true) // 是否必须完成
+ points      Int           @default(0) // 完成获得的积分
+ actions     Json?         // 可执行操作
+ metadata    Json?         // 额外元数据
+ 
+ // 关联关系
+ tutorial    Tutorial      @relation(fields: [tutorialId], references: [id], onDelete: Cascade)
+ userStepProgress UserStepProgress[] // 用户步骤进度记录
+ 
+ @@map("tutorial_steps")
+ @@index([tutorialId, order])
+}
+
+// 用户教程进度模型
+model UserTutorialProgress {
+ id          String            @id @default(cuid())
+ userId      String            // 用户ID
+ tutorialId  String            // 教程ID
+ status      TutorialProgressStatus // 进度状态
+ currentStep Int               @default(0) // 当前步骤索引
+ completedSteps Int            @default(0) // 已完成步骤数
+ timeSpent   Int               @default(0) // 花费时间（秒）
+ startedAt   DateTime?         // 开始时间
+ completedAt DateTime?         // 完成时间
+ skippedAt   DateTime?         // 跳过时间
+ metadata    Json?             // 额外元数据
+ 
+ // 关联关系
+ user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+ tutorial    Tutorial          @relation(fields: [tutorialId], references: [id], onDelete: Cascade)
+ stepProgress UserStepProgress[] // 步骤进度记录
+ 
+ @@unique([userId, tutorialId])
+ @@map("user_tutorial_progress")
+}
+
+// 用户步骤进度模型
+model UserStepProgress {
+ id          String            @id @default(cuid())
+ userProgressId String         // 用户进度ID
+ stepId      String            // 步骤ID
+ status      StepProgressStatus // 步骤状态
+ timeSpent   Int               @default(0) // 花费时间（秒）
+ completedAt DateTime?         // 完成时间
+ skippedAt   DateTime?         // 跳过时间
+ attempts    Int               @default(0) // 尝试次数
+ metadata    Json?             // 额外元数据
+ 
+ // 关联关系
+ userProgress UserTutorialProgress @relation(fields: [userProgressId], references: [id], onDelete: Cascade)
+ step        TutorialStep       @relation(fields: [stepId], references: [id], onDelete: Cascade)
+ 
+ @@unique([userProgressId, stepId])
+ @@map("user_step_progress")
+}
+
+// 教程反馈模型
+model TutorialFeedback {
+ id          String          @id @default(cuid())
+ userId      String          // 用户ID
+ tutorialId  String          // 教程ID
+ rating      Int             // 评分 (1-5)
+ comment     String?         // 评论
+ helpful     Boolean?        // 是否有帮助
+ createdAt   DateTime        @default(now())
+ 
+ // 关联关系
+ user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+ tutorial    Tutorial        @relation(fields: [tutorialId], references: [id], onDelete: Cascade)
+ 
+ @@unique([userId, tutorialId])
+ @@map("tutorial_feedback")
+}
+
+// 新手引导相关枚举
+enum TutorialCategory {
+ BASICS           // 基础功能
+ ADVANCED         // 高级功能
+ FEATURES         // 特色功能
+ ACHIEVEMENTS     // 成就系统
+ REWARDS          // 奖励系统
+ CHALLENGES       // 挑战系统
+}
+
+enum TutorialAudience {
+ NEW_USER         // 新用户
+ RETURNING_USER   // 回归用户
+ POWER_USER       // 高级用户
+}
+
+enum TutorialStepType {
+ INFO             // 信息展示
+ INTERACTION      // 交互操作
+ NAVIGATION       // 页面导航
+ DEMONSTRATION    // 功能演示
+}
+
+enum TutorialProgressStatus {
+ NOT_STARTED      // 未开始
+ IN_PROGRESS      // 进行中
+ COMPLETED        // 已完成
+ SKIPPED          // 已跳过
+}
+
+enum StepProgressStatus {
+ NOT_STARTED      // 未开始
+ IN_PROGRESS      // 进行中
+ COMPLETED        // 已完成
+ SKIPPED          // 已跳过
 }
