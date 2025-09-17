@@ -34,7 +34,12 @@ model User {
   pointTransactions PointTransaction[] @relation("PointTransactionsUser")
   userDailyChallenges UserDailyChallenge[] @relation("UserDailyChallengesUser")
   leaderboardEntries LeaderboardEntry[] @relation("LeaderboardEntriesUser")
-  
+  userBehaviorEvents UserBehaviorEvent[] @relation("UserBehaviorEventsUser")
+  abTestAssignments ABTestUserAssignment[]
+  createdAbTestTemplates ABTestTemplate[] @relation("ABTestTemplatesCreator")
+  createdABSegments ABSegment[] @relation("ABSegmentsCreator")
+  abSegments ABSegmentUser[]
+   
   @@map("users")
 }
 
@@ -136,8 +141,38 @@ model GamificationProfile {
   pointTransactions PointTransaction[] @relation("PointTransactionsProfile")
   dailyChallenges UserDailyChallenge[] @relation("UserDailyChallengesProfile")
   leaderboardEntries LeaderboardEntry[] @relation("LeaderboardEntriesProfile")
+  learningStyle UserLearningStyle? // 学习风格分析结果
   
   @@map("gamification_profiles")
+}
+
+// 学习风格枚举
+enum LearningStyleType {
+  VISUAL      // 视觉型
+  AUDITORY    // 听觉型
+  KINESTHETIC // 动觉型
+  READING     // 阅读型
+  MIXED       // 混合型
+}
+
+// 学习风格分析模型
+model UserLearningStyle {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  primaryStyle   LearningStyleType  // 主要学习风格
+  secondaryStyle LearningStyleType? // 次要学习风格
+  visualScore   Int     @default(0) // 视觉学习倾向分数 (0-100)
+  auditoryScore Int     @default(0) // 听觉学习倾向分数 (0-100)
+  kinestheticScore Int @default(0) // 动觉学习倾向分数 (0-100)
+  readingScore  Int     @default(0) // 阅读学习倾向分数 (0-100)
+  lastAnalyzedAt DateTime @default(now()) // 最后分析时间
+  dataPoints    Int      @default(0) // 分析数据点数量
+  
+  // 关联关系
+  profile GamificationProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  userBehaviorEvents UserBehaviorEvent[] @relation("UserBehaviorEventsLearningStyle")
+  
+  @@map("user_learning_styles")
 }
 
 // 成就模型
@@ -362,4 +397,227 @@ enum PointType {
   SPENT          // 消费的积分
   BONUS          // 奖励积分
   PENALTY        // 惩罚积分
+}
+
+// 用户行为事件类型枚举
+enum UserBehaviorEventType {
+  REVIEW_COMPLETED     // 完成复习
+  MEMORY_CREATED       // 创建记忆内容
+  CATEGORY_FOCUS       // 专注特定类别
+  TIME_SPENT           // 学习时间
+  ACCURACY_HIGH        // 高准确率
+  ACCURACY_LOW         // 低准确率
+  STREAK_MAINTAINED    // 保持连续学习
+  CHALLENGE_COMPLETED // 完成挑战
+  ACHIEVEMENT_UNLOCKED // 解锁成就
+  LEVEL_UP            // 升级
+  POINTS_EARNED       // 获得积分
+  UI_INTERACTION      // UI交互
+  THEME_CHANGED       // 主题变更
+  CUSTOMIZATION       // 自定义操作
+}
+
+// 学习内容类型枚举
+enum LearningContentType {
+  TEXT                // 文本内容
+  IMAGE               // 图像内容
+  AUDIO               // 音频内容
+  VIDEO               // 视频内容
+  INTERACTIVE         // 交互内容
+  QUIZ                // 测验内容
+}
+
+// 用户行为事件模型 - 用于学习风格分析
+model UserBehaviorEvent {
+  id        String               @id @default(cuid())
+  userId    String
+  eventType UserBehaviorEventType  // 事件类型
+  contentType LearningContentType? // 内容类型
+  categoryId String?              // 内容类别
+  timeSpent Int?                 @default(0) // 花费时间（秒）
+  accuracy   Float?               @default(0.0) // 准确率（0-1）
+  difficulty Int?                 @default(1) // 难度（1-5）
+  success    Boolean?             @default(false) // 是否成功
+  metadata   Json?                // 额外元数据
+  timestamp DateTime              @default(now()) // 事件时间
+  
+  // 关联关系
+  user        User               @relation("UserBehaviorEventsUser", fields: [userId], references: [id], onDelete: Cascade, map: "user_behavior_events_user_id_fkey")
+  learningStyle UserLearningStyle? @relation("UserBehaviorEventsLearningStyle", fields: [userId], references: [userId], map: "user_behavior_events_learning_style_id_fkey")
+  
+  @@map("user_behavior_events")
+  @@index([userId, timestamp])
+}
+
+// A/B测试相关模型
+// A/B测试模型
+model ABTest {
+ id          String      @id @default(cuid())
+ name        String      // 测试名称
+ description String      // 测试描述
+ status      ABTestStatus @default(DRAFT) // 测试状态
+ startDate   DateTime?   // 开始时间
+ endDate     DateTime?   // 结束时间
+ targetAudience Json?    // 目标受众配置
+ createdAt   DateTime    @default(now())
+ updatedAt   DateTime    @updatedAt
+ 
+ // 关联关系
+ variants    ABTestVariant[]
+ metrics     ABTestMetric[]
+ results     ABTestResult[]
+ userAssignments ABTestUserAssignment[]
+ 
+ @@map("ab_tests")
+}
+
+// A/B测试变体模型
+model ABTestVariant {
+ id          String   @id @default(cuid())
+ testId      String
+ name        String   // 变体名称
+ description String   // 变体描述
+ config      Json     // 变体配置
+ trafficPercentage Float   @default(50.0) // 流量分配百分比
+ isControl   Boolean  @default(false) // 是否为对照组
+ createdAt   DateTime @default(now())
+ 
+ // 关联关系
+ test        ABTest          @relation(fields: [testId], references: [id], onDelete: Cascade)
+ results     ABTestResult[]
+ userAssignments ABTestUserAssignment[]
+ 
+ @@map("ab_test_variants")
+}
+
+// A/B测试指标模型
+model ABTestMetric {
+ id          String          @id @default(cuid())
+ testId      String
+ name        String          // 指标名称
+ description String          // 指标描述
+ type        ABTestMetricType // 指标类型
+ formula     String?         // 计算公式
+ unit        String?         // 单位
+ isActive    Boolean         @default(true)
+ createdAt   DateTime        @default(now())
+ 
+ // 关联关系
+ test        ABTest          @relation(fields: [testId], references: [id], onDelete: Cascade)
+ results     ABTestResult[]
+ 
+ @@map("ab_test_metrics")
+}
+
+// A/B测试结果模型
+model ABTestResult {
+ id          String   @id @default(cuid())
+ testId      String
+ variantId   String
+ metricId    String
+ value       Float    @default(0) // 指标值
+ change      Float    @default(0) // 绝对变化
+ changePercentage Float @default(0) // 百分比变化
+ confidence  Float    @default(0) // 置信度 (0-1)
+ significance Boolean  @default(false) // 是否显著
+ sampleSize  Int      @default(0) // 样本大小
+ createdAt   DateTime @default(now())
+ updatedAt   DateTime @updatedAt
+ 
+ // 关联关系
+ test        ABTest       @relation(fields: [testId], references: [id], onDelete: Cascade)
+ variant     ABTestVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+ metric      ABTestMetric  @relation(fields: [metricId], references: [id], onDelete: Cascade)
+ 
+ @@unique([testId, variantId, metricId])
+ @@map("ab_test_results")
+}
+
+// A/B测试用户分配模型
+model ABTestUserAssignment {
+ id          String   @id @default(cuid())
+ testId      String
+ userId      String
+ variantId   String
+ assignedAt  DateTime @default(now())
+ 
+ // 关联关系
+ test        ABTest       @relation(fields: [testId], references: [id], onDelete: Cascade)
+ variant     ABTestVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+ user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+ 
+ @@unique([testId, userId])
+ @@map("ab_test_user_assignments")
+}
+
+// A/B测试相关枚举
+enum ABTestStatus {
+ DRAFT      // 草稿
+ ACTIVE     // 活跃
+ PAUSED     // 暂停
+ COMPLETED  // 完成
+ CANCELLED  // 取消
+}
+
+enum ABTestMetricType {
+ ENGAGEMENT   // 参与度
+ RETENTION    // 保留率
+ CONVERSION   // 转化率
+ REVENUE      // 收入
+ SATISFACTION // 满意度
+ PERFORMANCE  // 性能
+ CUSTOM       // 自定义
+}
+
+// A/B测试模板模型
+model ABTestTemplate {
+  id          String      @id @default(cuid())
+  name        String      // 模板名称
+  description String      // 模板描述
+  category    String      // 模板类别
+  variants    Json        // 变体定义
+  metrics     Json        // 指标定义
+  targetAudience Json?     // 目标受众配置
+  isActive    Boolean     @default(true)
+  createdBy   String      // 创建者ID
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  // 关联关系
+  creator     User        @relation("ABTestTemplatesCreator", fields: [createdBy], references: [id])
+  
+  @@map("ab_test_templates")
+}
+
+// A/B测试用户细分模型
+model ABSegment {
+  id          String      @id @default(cuid())
+  name        String      // 细分名称
+  description String      // 细分描述
+  criteria    Json        // 细分条件
+  isActive    Boolean     @default(true)
+  createdBy   String      // 创建者ID
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  // 关联关系
+  creator     User        @relation("ABSegmentsCreator", fields: [createdBy], references: [id])
+  segmentUsers ABSegmentUser[]
+  
+  @@map("ab_segments")
+}
+
+// A/B测试细分用户模型
+model ABSegmentUser {
+  id          String      @id @default(cuid())
+  segmentId   String
+  userId      String
+  addedAt     DateTime    @default(now())
+  
+  // 关联关系
+  segment     ABSegment   @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([segmentId, userId])
+  @@map("ab_segment_users")
 }

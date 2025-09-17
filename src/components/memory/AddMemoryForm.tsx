@@ -2,8 +2,7 @@ import React, { useState } from "react";
 import { X } from "lucide-react";
 import { MemoryItem, DifficultyLevel } from "@/types";
 import { storageManager } from "@/utils/storage";
-import { gamificationService } from "@/services/gamification.service";
-import { showGamificationNotification } from "@/components/gamification/GamificationNotifications";
+import { useGamificationEventHandler } from "@/services/gamificationEventHandler.service";
 
 interface AddMemoryFormProps {
   onClose: () => void;
@@ -18,6 +17,7 @@ export function AddMemoryForm({ onClose, onSuccess, categories }: AddMemoryFormP
     difficulty: "medium" as DifficultyLevel,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { handleMemoryCreated } = useGamificationEventHandler();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,19 +41,14 @@ export function AddMemoryForm({ onClose, onSuccess, categories }: AddMemoryFormP
         intervals: [],
       });
 
-      // 调用游戏化服务
+      // 调用游戏化事件处理器
       try {
-        await gamificationService.handleMemoryCreated("user-id");
-        
-        // 显示游戏化通知
-        showGamificationNotification({
-          type: "POINTS",
-          title: "创建记忆内容",
-          message: "你获得了积分奖励",
-          amount: 5
+        await handleMemoryCreated({
+          category: formData.category,
+          difficulty: formData.difficulty
         });
       } catch (gamificationError) {
-        console.error("游戏化服务调用失败:", gamificationError);
+        console.error("游戏化事件处理失败:", gamificationError);
         // 不影响主流程，只记录错误
       }
 

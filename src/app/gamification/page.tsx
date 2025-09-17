@@ -1,9 +1,15 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { GamificationProfile } from '@/components/gamification/GamificationProfile'
 import { DailyChallenges } from '@/components/gamification/DailyChallenges'
+import { EnhancedDailyChallenges } from '@/components/gamification/EnhancedDailyChallenges'
 import { Leaderboard } from '@/components/gamification/Leaderboard'
+import { EnhancedLeaderboard } from '@/components/gamification/EnhancedLeaderboard'
+import { AchievementSystem } from '@/components/gamification/AchievementSystem'
+import { AchievementNotificationManager } from '@/components/gamification/AchievementNotification'
+import { EnhancedGamificationNotifications, initEnhancedGamificationNotifications } from '@/components/gamification/EnhancedGamificationNotifications'
+import { RewardAnimationManager } from '@/components/gamification/RewardAnimations'
 import { GamificationErrorBoundary } from '@/components/gamification/GamificationErrorBoundary'
 import { Navigation } from '@/components/layout/Navigation'
 import {
@@ -32,9 +38,106 @@ import {
 import { useGamificationData } from '@/hooks/useGamificationData'
 import { GamificationProfileWithDetails } from '@/types'
 import { UserAchievement, UserDailyChallenge } from '@prisma/client'
+import { initAchievementNotifications } from '@/components/gamification/AchievementNotification'
+
+// 游戏化统计卡片组件
+const GamificationStats = React.memo(function GamificationStats({ profile }: { profile: GamificationProfileWithDetails | null }) {
+  if (!profile) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map((i) => (
+          <Card key={i} className="apple-card">
+            <CardContent className="p-4">
+              <div className="flex justify-center items-center h-16">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
+
+  const unlockedAchievements = profile.achievements.filter((a: UserAchievement) => a.progress >= 100).length
+  const totalAchievements = profile.achievements.length
+  const completedChallenges = profile.dailyChallenges.filter((c: UserDailyChallenge) => c.completed).length
+  const totalChallenges = profile.dailyChallenges.length
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+      <Card className="apple-card apple-card-hover">
+        <CardContent className="p-3 md:p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-purple-100 rounded-lg relative overflow-hidden">
+              <Award className="h-5 w-5 text-purple-600 relative z-10" />
+              <div className="absolute inset-0 bg-purple-200 opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">成就</p>
+              <p className="font-bold text-gray-900 counter-animate">
+                {unlockedAchievements}/{totalAchievements}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="apple-card apple-card-hover">
+        <CardContent className="p-3 md:p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-green-100 rounded-lg relative overflow-hidden">
+              <Target className="h-5 w-5 text-green-600 relative z-10" />
+              <div className="absolute inset-0 bg-green-200 opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">挑战</p>
+              <p className="font-bold text-gray-900 counter-animate">
+                {completedChallenges}/{totalChallenges}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="apple-card apple-card-hover">
+        <CardContent className="p-3 md:p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-100 rounded-lg relative overflow-hidden">
+              <TrendingUp className="h-5 w-5 text-blue-600 relative z-10" />
+              <div className="absolute inset-0 bg-blue-200 opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">排名</p>
+              <p className="font-bold text-gray-900 counter-animate">
+                #{Math.floor(Math.random() * 100) + 1}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="apple-card apple-card-hover">
+        <CardContent className="p-3 md:p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-orange-100 rounded-lg relative overflow-hidden">
+              <Calendar className="h-5 w-5 text-orange-600 relative z-10" />
+              <div className="absolute inset-0 bg-orange-200 opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">活跃天数</p>
+              <p className="font-bold text-gray-900 counter-animate">
+                {Math.floor(Math.random() * 30) + 1}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+})
 
 // 游戏化数据概览组件
-const GamificationOverview = ({ profile }: { profile: GamificationProfileWithDetails | null }) => {
+const GamificationOverview = React.memo(({ profile }: { profile: GamificationProfileWithDetails | null }) => {
   if (!profile) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -57,6 +160,7 @@ const GamificationOverview = ({ profile }: { profile: GamificationProfileWithDet
   const progress = ((profile.experience - currentLevelExp) / (nextLevelExp - currentLevelExp)) * 100
 
   // 计算成就数量
+  const achievementCount = profile.achievements ? profile.achievements.length : 0
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
@@ -167,102 +271,8 @@ const GamificationOverview = ({ profile }: { profile: GamificationProfileWithDet
     </div>
   )
 }
+)
 
-// 游戏化统计卡片组件
-const GamificationStats = ({ profile }: { profile: GamificationProfileWithDetails | null }) => {
-  if (!profile) {
-    return (
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[1, 2, 3, 4].map((i) => (
-          <Card key={i} className="apple-card">
-            <CardContent className="p-4">
-              <div className="flex justify-center items-center h-16">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    )
-  }
-
-  const unlockedAchievements = profile.achievements.filter((a: UserAchievement) => a.progress >= 100).length
-  const totalAchievements = profile.achievements.length
-  const completedChallenges = profile.dailyChallenges.filter((c: UserDailyChallenge) => c.completed).length
-  const totalChallenges = profile.dailyChallenges.length
-
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-      <Card className="apple-card apple-card-hover">
-        <CardContent className="p-3 md:p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-lg relative overflow-hidden">
-              <Award className="h-5 w-5 text-purple-600 relative z-10" />
-              <div className="absolute inset-0 bg-purple-200 opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">成就</p>
-              <p className="font-bold text-gray-900 counter-animate">
-                {unlockedAchievements}/{totalAchievements}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="apple-card apple-card-hover">
-        <CardContent className="p-3 md:p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-lg relative overflow-hidden">
-              <Target className="h-5 w-5 text-green-600 relative z-10" />
-              <div className="absolute inset-0 bg-green-200 opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">挑战</p>
-              <p className="font-bold text-gray-900 counter-animate">
-                {completedChallenges}/{totalChallenges}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="apple-card apple-card-hover">
-        <CardContent className="p-3 md:p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg relative overflow-hidden">
-              <TrendingUp className="h-5 w-5 text-blue-600 relative z-10" />
-              <div className="absolute inset-0 bg-blue-200 opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">排名</p>
-              <p className="font-bold text-gray-900 counter-animate">
-                #{Math.floor(Math.random() * 100) + 1}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="apple-card apple-card-hover">
-        <CardContent className="p-3 md:p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-orange-100 rounded-lg relative overflow-hidden">
-              <Calendar className="h-5 w-5 text-orange-600 relative z-10" />
-              <div className="absolute inset-0 bg-orange-200 opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">活跃天数</p>
-              <p className="font-bold text-gray-900 counter-animate">
-                {Math.floor(Math.random() * 30) + 1}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
 
 export default function GamificationPage() {
   // 临时使用固定用户ID，实际应该从会话中获取
@@ -276,10 +286,39 @@ export default function GamificationPage() {
     updateChallengeProgress,
     claimChallengeReward
   } = useGamificationData(userId)
+  
+  // 奖励动画状态
+  const [rewards, setRewards] = useState<Array<{
+    id: string
+    type: 'POINTS' | 'BADGE' | 'TROPHY' | 'LEVEL_UP' | 'STREAK_BONUS' | 'SPECIAL_GIFT' | 'ACHIEVEMENT_UNLOCK'
+    title: string
+    description: string
+    amount?: number
+    color?: string
+    icon?: React.ReactNode
+    animation?: string
+    rarity?: 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY'
+    soundEnabled?: boolean
+    hapticEnabled?: boolean
+  }>>([])
+
+  // 初始化通知系统
+  useEffect(() => {
+    initAchievementNotifications()
+    initEnhancedGamificationNotifications()
+  }, [])
+  
+  // 处理奖励完成
+  const handleRewardComplete = (rewardId: string) => {
+    setRewards(prev => prev.filter(r => r.id !== rewardId))
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <Navigation />
+      <AchievementNotificationManager />
+      <EnhancedGamificationNotifications />
+      <RewardAnimationManager rewards={rewards} onRewardComplete={handleRewardComplete} />
       <div className="max-w-7xl mx-auto p-4 md:p-8">
         {/* 页面标题 */}
         <div className="mb-6 md:mb-8 text-center">
@@ -344,10 +383,13 @@ export default function GamificationPage() {
                   {loading ? (
                     <GamificationChallengesSkeleton />
                   ) : (
-                    <DailyChallenges
+                    <EnhancedDailyChallenges
                       userId={userId}
                       onUpdateChallengeProgress={updateChallengeProgress}
                       onClaimChallengeReward={claimChallengeReward}
+                      onReward={(reward) => {
+                        setRewards(prev => [...prev, reward])
+                      }}
                     />
                   )}
                 </GamificationErrorBoundary>
@@ -369,12 +411,36 @@ export default function GamificationPage() {
                   {loading ? (
                     <GamificationLeaderboardSkeleton />
                   ) : (
-                    <Leaderboard userId={userId} />
+                    <EnhancedLeaderboard userId={userId} />
                   )}
                 </GamificationErrorBoundary>
               </CardContent>
             </Card>
           </div>
+        </div>
+
+        {/* 成就系统区域 */}
+        <div className="mt-6 md:mt-8">
+          <Card className="apple-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-pink-600">
+                <Trophy className="h-5 w-5 text-purple-500" />
+                成就系统
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <GamificationErrorBoundary>
+                <AchievementSystem
+                  userId={userId}
+                  achievements={profile?.achievements.map(ua => ({
+                    ...ua.achievement,
+                    userAchievement: ua
+                  }))}
+                  onRefresh={refreshProfile}
+                />
+              </GamificationErrorBoundary>
+            </CardContent>
+          </Card>
         </div>
 
         {/* 底部说明 */}

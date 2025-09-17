@@ -3,8 +3,7 @@ import { RotateCcw, Check, X, Clock, Brain } from "lucide-react";
 import { MemoryItem } from "@/types";
 import { storageManager } from "@/utils/storage";
 import { SmartReviewScheduler } from "@/utils/reviewScheduler";
-import { gamificationService } from "@/services/gamification.service";
-import { showGamificationNotification } from "@/components/gamification/GamificationNotifications";
+import { useGamificationEventHandler } from "@/services/gamificationEventHandler.service";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 
@@ -26,6 +25,7 @@ export function ReviewSession({ onComplete, onSkip }: ReviewSessionProps) {
   });
 
   const scheduler = new SmartReviewScheduler();
+  const { handleReviewCompleted } = useGamificationEventHandler();
 
   const loadReviewItems = useCallback(async () => {
     try {
@@ -101,27 +101,16 @@ export function ReviewSession({ onComplete, onSkip }: ReviewSessionProps) {
         [correct ? "correct" : "incorrect"]: prev[correct ? "correct" : "incorrect"] + 1,
       }));
 
-      // 调用游戏化服务
+      // 调用游戏化事件处理器
       try {
-        // 添加积分和经验值
-        await gamificationService.handleReviewCompleted("user-id", { isCompleted: correct });
-        
-        // 显示游戏化通知
-        showGamificationNotification({
-          type: "POINTS",
-          title: "复习完成",
-          message: correct ? "太棒了！你正确回忆了这个内容" : "继续努力，下次一定可以记住",
-          amount: correct ? 10 : 5
-        });
-        
-        showGamificationNotification({
-          type: "EXPERIENCE",
-          title: "经验值增加",
-          message: "你获得了经验值",
-          amount: correct ? 20 : 10
+        await handleReviewCompleted({
+          isCompleted: correct,
+          responseTime,
+          difficulty: currentItem.difficulty,
+          reviewCount: currentItem.reviewCount + 1
         });
       } catch (gamificationError) {
-        console.error("游戏化服务调用失败:", gamificationError);
+        console.error("游戏化事件处理失败:", gamificationError);
         // 不影响主流程，只记录错误
       }
 

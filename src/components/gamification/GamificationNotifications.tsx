@@ -1,29 +1,87 @@
+"use client";
+
 import React, { useState, useEffect } from "react";
-import { Check, Star, Trophy, Zap } from "lucide-react";
+import { Check, Star, Trophy, Zap, Target, Award, TrendingUp } from "lucide-react";
 
 interface GamificationNotification {
   id: string;
-  type: "POINTS" | "EXPERIENCE" | "ACHIEVEMENT" | "STREAK" | "LEVEL_UP";
+  type: "POINTS" | "EXPERIENCE" | "ACHIEVEMENT" | "STREAK" | "LEVEL_UP" | "CHALLENGE_COMPLETED";
   title: string;
   message: string;
   amount?: number;
   timestamp: Date;
+  autoClose?: boolean;
+  duration?: number;
 }
 
+// 全局通知状态管理
+let globalNotifications: GamificationNotification[] = [];
+let globalListeners: ((notifications: GamificationNotification[]) => void)[] = [];
+
+// 添加全局通知监听器
+export const addNotificationListener = (listener: (notifications: GamificationNotification[]) => void) => {
+  globalListeners.push(listener);
+  return () => {
+    globalListeners = globalListeners.filter(l => l !== listener);
+  };
+};
+
+// 通知所有监听器
+const notifyListeners = () => {
+  globalListeners.forEach(listener => listener([...globalNotifications]));
+};
+
 export function GamificationNotifications() {
-  const [notifications] = useState<GamificationNotification[]>([]);
-  const [visibleNotifications, setVisibleNotifications] = useState<string[]>([]);
+  const [notifications, setNotifications] = useState<GamificationNotification[]>([]);
+  const [visibleNotifications, setVisibleNotifications] = useState<Set<string>>(new Set());
 
-
-  // 监听游戏化事件
+  // 监听全局通知变化
   useEffect(() => {
-    // 这里可以添加事件监听器，或者通过全局状态管理接收游戏化事件
-    // 为了演示，我们暂时不添加实际的事件监听
-    
-    return () => {
-      // 清理事件监听器
+    const handleNotificationsChange = (newNotifications: GamificationNotification[]) => {
+      setNotifications(newNotifications);
+      
+      // 自动显示新通知
+      const newNotificationIds = newNotifications
+        .filter(n => !visibleNotifications.has(n.id))
+        .map(n => n.id);
+      
+      if (newNotificationIds.length > 0) {
+        setVisibleNotifications(prev => new Set([...prev, ...newNotificationIds]));
+      }
     };
-  }, []);
+
+    const unsubscribe = addNotificationListener(handleNotificationsChange);
+    return unsubscribe;
+  }, [visibleNotifications]);
+
+  // 自动关闭通知
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      const notificationsToClose = notifications.filter(notification => {
+        if (notification.autoClose !== false) {
+          const duration = notification.duration || 5000; // 默认5秒
+          return now.getTime() - notification.timestamp.getTime() > duration;
+        }
+        return false;
+      });
+
+      if (notificationsToClose.length > 0) {
+        const idsToClose = notificationsToClose.map(n => n.id);
+        setVisibleNotifications(prev => {
+          const newSet = new Set(prev);
+          idsToClose.forEach(id => newSet.delete(id));
+          return newSet;
+        });
+
+        // 从全局通知中移除
+        globalNotifications = globalNotifications.filter(n => !idsToClose.includes(n.id));
+        notifyListeners();
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [notifications]);
 
   // 获取通知图标
   const getNotificationIcon = (type: GamificationNotification["type"]) => {
@@ -35,9 +93,11 @@ export function GamificationNotifications() {
       case "ACHIEVEMENT":
         return <Trophy className="w-6 h-6 text-purple-500" />;
       case "STREAK":
-        return <Check className="w-6 h-6 text-green-500" />;
+        return <TrendingUp className="w-6 h-6 text-green-500" />;
       case "LEVEL_UP":
-        return <Trophy className="w-6 h-6 text-orange-500" />;
+        return <Award className="w-6 h-6 text-orange-500" />;
+      case "CHALLENGE_COMPLETED":
+        return <Target className="w-6 h-6 text-red-500" />;
       default:
         return <Star className="w-6 h-6 text-yellow-500" />;
     }
@@ -56,6 +116,8 @@ export function GamificationNotifications() {
         return "bg-green-50 border-green-200";
       case "LEVEL_UP":
         return "bg-orange-50 border-orange-200";
+      case "CHALLENGE_COMPLETED":
+        return "bg-red-50 border-red-200";
       default:
         return "bg-gray-50 border-gray-200";
     }
@@ -64,7 +126,7 @@ export function GamificationNotifications() {
   return (
     <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
       {notifications
-        .filter(notification => visibleNotifications.includes(notification.id))
+        .filter(notification => visibleNotifications.has(notification.id))
         .map(notification => (
           <div
             key={notification.id}
@@ -82,7 +144,15 @@ export function GamificationNotifications() {
                 )}
               </div>
               <button
-                onClick={() => setVisibleNotifications(prev => prev.filter(id => id !== notification.id))}
+                onClick={() => {
+                  setVisibleNotifications(prev => {
+                    const newSet = new Set(prev);
+                    newSet.delete(notification.id);
+                    return newSet;
+                  });
+                  globalNotifications = globalNotifications.filter(n => n.id !== notification.id);
+                  notifyListeners();
+                }}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -96,21 +166,31 @@ export function GamificationNotifications() {
   );
 }
 
-
 export const initGamificationNotifications = () => {
-  // 在实际应用中，这里可以初始化通知系统
-  // 为了简化，我们只提供一个简单的全局函数
+  // 初始化通知系统
+  if (typeof window !== 'undefined' && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
 };
 
 export const showGamificationNotification = (notification: Omit<GamificationNotification, "id" | "timestamp">) => {
-  // 在实际应用中，这里可以通过事件总线或状态管理来触发通知
-  // 为了简化，我们使用浏览器的通知API作为备选方案
-  if (Notification.permission === "granted") {
+  const newNotification: GamificationNotification = {
+    ...notification,
+    id: `notification-${Date.now()}-${Math.random()}`,
+    timestamp: new Date(),
+    autoClose: notification.autoClose ?? true,
+    duration: notification.duration ?? 5000
+  };
+
+  // 添加到全局通知列表
+  globalNotifications = [...globalNotifications, newNotification];
+  notifyListeners();
+
+  // 如果浏览器通知权限已授予，显示浏览器通知
+  if (typeof window !== 'undefined' && Notification.permission === "granted") {
     new Notification(notification.title, {
       body: notification.message,
       icon: "/favicon.ico"
     });
-  } else {
-    console.log("游戏化通知:", notification);
   }
 };

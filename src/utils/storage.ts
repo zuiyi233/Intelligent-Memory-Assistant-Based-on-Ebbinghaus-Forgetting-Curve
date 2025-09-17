@@ -12,6 +12,11 @@ export class LocalStorageManager {
     SETTINGS: "memory_settings",
   };
 
+  // 检查是否在浏览器环境中
+  private isBrowser(): boolean {
+    return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+  }
+
   private scheduler = new SmartReviewScheduler();
   private classificationSystem = new ContentClassificationSystem();
 
@@ -20,6 +25,10 @@ export class LocalStorageManager {
    */
   async saveItem(item: MemoryItem): Promise<void> {
     try {
+      if (!this.isBrowser()) {
+        throw new Error('Storage is not available on the server side');
+      }
+      
       const items = await this.getItems();
       const existingIndex = items.findIndex(i => i.id === item.id);
       
@@ -44,6 +53,10 @@ export class LocalStorageManager {
    */
   async getItems(): Promise<MemoryItem[]> {
     try {
+      if (!this.isBrowser()) {
+        return [];
+      }
+      
       const stored = localStorage.getItem(this.STORAGE_KEYS.ITEMS);
       if (!stored) return [];
 
@@ -70,6 +83,10 @@ export class LocalStorageManager {
    */
   async deleteItem(id: string): Promise<void> {
     try {
+      if (!this.isBrowser()) {
+        throw new Error('Storage is not available on the server side');
+      }
+
       const items = await this.getItems();
       const itemToDelete = items.find(item => item.id === id);
       
@@ -112,6 +129,10 @@ export class LocalStorageManager {
    */
   async getCategories(): Promise<Category[]> {
     try {
+      if (!this.isBrowser()) {
+        return [];
+      }
+      
       const stored = localStorage.getItem(this.STORAGE_KEYS.CATEGORIES);
       if (!stored) {
         // 初始化默认分类
@@ -137,6 +158,10 @@ export class LocalStorageManager {
    */
   async deleteCategory(id: string): Promise<void> {
     try {
+      if (!this.isBrowser()) {
+        throw new Error('Storage is not available on the server side');
+      }
+
       const categories = await this.getCategories();
       const filteredCategories = categories.filter(category => category.id !== id);
       
@@ -156,31 +181,35 @@ export class LocalStorageManager {
   }
 
   /**
-   * 更新分类统计信息
-   */
-  async updateCategoryStats(categoryId: string): Promise<void> {
-    try {
-      const items = await this.getItems();
-      const categories = await this.getCategories();
-      
-      const categoryIndex = categories.findIndex(c => c.id === categoryId);
-      if (categoryIndex === -1) return;
-
-      const categoryItems = items.filter(item => item.category === categoryId);
-      categories[categoryIndex].itemCount = categoryItems.length;
-      
-      if (categoryItems.length > 0) {
-        const totalRetention = categoryItems.reduce((sum, item) => sum + item.retentionRate, 0);
-        categories[categoryIndex].averageRetention = totalRetention / categoryItems.length;
-      } else {
-        categories[categoryIndex].averageRetention = 0;
-      }
-      
-      localStorage.setItem(this.STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
-    } catch (error) {
-      console.error("更新分类统计失败:", error);
+ * 更新分类统计信息
+ */
+async updateCategoryStats(categoryId: string): Promise<void> {
+  try {
+    if (!this.isBrowser()) {
+      return;
     }
+
+    const items = await this.getItems();
+    const categories = await this.getCategories();
+    
+    const categoryIndex = categories.findIndex(c => c.id === categoryId);
+    if (categoryIndex === -1) return;
+
+    const categoryItems = items.filter(item => item.category === categoryId);
+    categories[categoryIndex].itemCount = categoryItems.length;
+    
+    if (categoryItems.length > 0) {
+      const totalRetention = categoryItems.reduce((sum, item) => sum + item.retentionRate, 0);
+      categories[categoryIndex].averageRetention = totalRetention / categoryItems.length;
+    } else {
+      categories[categoryIndex].averageRetention = 0;
+    }
+    
+    localStorage.setItem(this.STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
+  } catch (error) {
+    console.error("更新分类统计失败:", error);
   }
+}
 
   /**
    * 搜索记忆项
@@ -239,25 +268,16 @@ export class LocalStorageManager {
   }
 
   /**
-   * 备份数据
+   * 导出数据
    */
-  async exportData(): Promise<string> {
-    try {
-      const items = await this.getItems();
-      const categories = await this.getCategories();
-      
-      const backupData = {
-        items,
-        categories,
-        exportedAt: new Date().toISOString(),
-        version: "1.0.0"
-      };
-      
-      return JSON.stringify(backupData, null, 2);
-    } catch (error) {
-      console.error("导出数据失败:", error);
-      throw error;
+  async exportData(): Promise<{ items: MemoryItem[]; categories: Category[] }> {
+    if (!this.isBrowser()) {
+      return { items: [], categories: [] };
     }
+
+    const items = this.getItems();
+    const categories = this.getCategories();
+    return { items, categories };
   }
 
   /**
@@ -265,6 +285,10 @@ export class LocalStorageManager {
    */
   async importData(jsonData: string): Promise<void> {
     try {
+      if (!this.isBrowser()) {
+        throw new Error('Storage is not available on the server side');
+      }
+      
       const backupData = JSON.parse(jsonData);
       
       if (backupData.items) {
@@ -287,11 +311,15 @@ export class LocalStorageManager {
    */
   async clearAllData(): Promise<void> {
     try {
+      if (!this.isBrowser()) {
+        throw new Error('Storage is not available on the server side');
+      }
+
       localStorage.removeItem(this.STORAGE_KEYS.ITEMS);
       localStorage.removeItem(this.STORAGE_KEYS.CATEGORIES);
       localStorage.removeItem(this.STORAGE_KEYS.SETTINGS);
     } catch (error) {
-      console.error("清空数据失败:", error);
+      console.error('Failed to clear data:', error);
       throw error;
     }
   }

@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db'
+import { prisma, isPrismaInitialized } from '@/lib/db'
 import {
   GamificationProfile,
   Achievement,
@@ -15,6 +15,8 @@ import {
   PointType,
   AchievementType
 } from '@prisma/client'
+import { gamificationEventHandler } from './gamificationEventHandler.service'
+import { gamificationABTestingInterceptorService } from './gamificationABTestingInterceptor.service'
 
 // 定义成就检查数据类型
 type AchievementCheckData = {
@@ -165,15 +167,23 @@ export class GamificationService {
    */
   async addPoints(userId: string, amount: number, type: PointTransactionType, description: string): Promise<GamificationProfile> {
     try {
+      // 使用A/B测试拦截器调整积分参数
+      const interceptedParams = await gamificationABTestingInterceptorService.interceptAddPoints(
+        userId,
+        amount,
+        type,
+        description
+      )
+      
       const profile = await this.getOrCreateProfile(userId)
       
       // 验证积分数量
-      if (amount === 0) {
+      if (interceptedParams.amount === 0) {
         throw new Error('积分数量不能为0')
       }
       
       // 如果是扣除积分，检查用户是否有足够积分
-      if (amount < 0 && profile.points < Math.abs(amount)) {
+      if (interceptedParams.amount < 0 && profile.points < Math.abs(interceptedParams.amount)) {
         throw new Error('积分不足')
       }
       
@@ -181,9 +191,9 @@ export class GamificationService {
       await prisma.pointTransaction.create({
         data: {
           userId,
-          amount,
-          type,
-          description
+          amount: interceptedParams.amount,
+          type: interceptedParams.type,
+          description: interceptedParams.description
         }
       })
 
@@ -191,14 +201,14 @@ export class GamificationService {
       await prisma.point.create({
         data: {
           userId,
-          amount: Math.abs(amount),
-          type: amount > 0 ? PointType.EARNED : PointType.SPENT,
-          source: description
+          amount: Math.abs(interceptedParams.amount),
+          type: interceptedParams.amount > 0 ? PointType.EARNED : PointType.SPENT,
+          source: interceptedParams.description
         }
       })
 
       // 更新用户积分
-      const newPoints = profile.points + amount
+      const newPoints = profile.points + interceptedParams.amount
       const updatedProfile = await prisma.gamificationProfile.update({
         where: { userId },
         data: {
@@ -208,7 +218,7 @@ export class GamificationService {
       })
 
       // 检查积分相关的成就
-      if (amount > 0 && newPoints >= 1000) {
+      if (interceptedParams.amount > 0 && newPoints >= 1000) {
         await this.checkAchievements(userId, 'POINTS', { points: newPoints })
       }
 
@@ -244,7 +254,9 @@ export class GamificationService {
    * 添加经验值
    */
   async addExperience(userId: string, amount: number): Promise<GamificationProfile> {
-    return await this.updateUserExperience(userId, amount)
+    // 使用A/B测试拦截器调整经验值
+    const adjustedAmount = await gamificationABTestingInterceptorService.interceptAddExperience(userId, amount)
+    return await this.updateUserExperience(userId, adjustedAmount)
   }
 
   /**
@@ -275,7 +287,7 @@ export class GamificationService {
   /**
    * 计算用户等级
    */
-  calculateLevel(experience: number): number {
+  async calculateLevel(experience: number, userId?: string): Promise<number> {
     // 使用指数增长公式计算等级
     // 每级所需经验值 = 基础值 * (等级^系数)
     const baseExp = 100
@@ -298,6 +310,11 @@ export class GamificationService {
       }
     }
     
+    // 如果提供了用户ID，使用A/B测试拦截器调整等级
+    if (userId) {
+      return await gamificationABTestingInterceptorService.interceptLevelCalculation(userId, experience)
+    }
+    
     return level
   }
 
@@ -317,7 +334,7 @@ export class GamificationService {
     const profile = await this.getOrCreateProfile(userId)
     
     // 使用新的等级计算公式
-    const newLevel = this.calculateLevel(profile.experience)
+    const newLevel = await this.calculateLevel(profile.experience, userId)
     
     if (newLevel > profile.level) {
       await this.handleLevelUp(userId, profile.level, newLevel)
@@ -342,6 +359,13 @@ export class GamificationService {
     if (bonusPoints > 0) {
       await this.addPoints(userId, bonusPoints, PointTransactionType.LEVEL_UP, `升级奖励: 从${oldLevel}级升到${newLevel}级`)
     }
+    
+    // 触发等级提升事件
+    await gamificationEventHandler.handleLevelUp(userId, {
+      oldLevel,
+      newLevel,
+      bonusPoints
+    })
     
     // 检查升级相关的成就
     await this.checkAchievements(userId, 'LEVEL_UP', { level: newLevel })
@@ -376,21 +400,24 @@ export class GamificationService {
         newStreak = 1
       }
       
+      // 使用A/B测试拦截器调整连续学习天数
+      const adjustedStreak = await gamificationABTestingInterceptorService.interceptStreakUpdate(userId, newStreak)
+      
       const updatedProfile = await prisma.gamificationProfile.update({
         where: { userId },
         data: {
-          streak: newStreak,
+          streak: adjustedStreak,
           lastActiveAt: now
         }
       })
       
       // 连续学习奖励
-      if (newStreak > profile.streak && newStreak % 7 === 0) {
-        await this.addPoints(userId, newStreak * 10, PointTransactionType.STREAK_BONUS, `连续学习${newStreak}天奖励`)
+      if (adjustedStreak > profile.streak && adjustedStreak % 7 === 0) {
+        await this.addPoints(userId, adjustedStreak * 10, PointTransactionType.STREAK_BONUS, `连续学习${adjustedStreak}天奖励`)
       }
       
       // 检查连续学习相关的成就
-      await this.checkStreakAchievements(userId, newStreak)
+      await this.checkStreakAchievements(userId, adjustedStreak)
       
       return updatedProfile
     } catch (error: unknown) {
@@ -615,6 +642,13 @@ export class GamificationService {
       await this.addPoints(userId, achievement.points, PointTransactionType.ACHIEVEMENT_UNLOCKED, `解锁成就: ${achievement.name}`)
     }
     
+    // 触发成就解锁事件
+    await gamificationEventHandler.handleAchievementUnlocked(userId, {
+      achievementId: achievement.id,
+      achievementName: achievement.name,
+      points: achievement.points
+    })
+    
     return userAchievement
   }
 
@@ -646,6 +680,13 @@ export class GamificationService {
     
     if (!achievement) return null
     
+    // 使用A/B测试拦截器调整成就进度
+    const interceptedProgress = await gamificationABTestingInterceptorService.interceptAchievementUnlock(
+      userId,
+      achievementId,
+      progress
+    )
+    
     // 查找或创建用户成就记录
     let userAchievement = await prisma.userAchievement.findUnique({
       where: {
@@ -664,14 +705,14 @@ export class GamificationService {
         data: {
           userId,
           achievementId,
-          progress: Math.min(100, Math.max(0, progress))
+          progress: Math.min(100, Math.max(0, interceptedProgress.progress))
         },
         include: {
           achievement: true
         }
       })
     } else {
-      const newProgress = Math.min(100, Math.max(0, progress))
+      const newProgress = Math.min(100, Math.max(0, interceptedProgress.progress))
       const wasCompleted = userAchievement.progress >= 100
       const isCompleted = newProgress >= 100
       
@@ -692,7 +733,7 @@ export class GamificationService {
       })
       
       // 如果刚刚完成成就，添加奖励
-      if (isCompleted && !wasCompleted) {
+      if (isCompleted && !wasCompleted && interceptedProgress.shouldUnlock) {
         await this.addPoints(userId, achievement.points, PointTransactionType.ACHIEVEMENT_UNLOCKED, `解锁成就: ${achievement.name}`)
       }
     }
@@ -825,6 +866,13 @@ export class GamificationService {
         if (progress >= 100) {
           await this.addPoints(userId, newUserChallenge.challenge.points, PointTransactionType.CHALLENGE_COMPLETED, `完成挑战: ${newUserChallenge.challenge.title}`)
           
+          // 触发挑战完成事件
+          await gamificationEventHandler.handleChallengeCompleted(userId, {
+            challengeId: newUserChallenge.challengeId,
+            challengeTitle: newUserChallenge.challenge.title,
+            points: newUserChallenge.challenge.points
+          })
+          
           // 检查挑战相关的成就
           await this.checkChallengeAchievements(userId, newUserChallenge.challenge.type)
         }
@@ -832,9 +880,17 @@ export class GamificationService {
         return newUserChallenge
       }
       
+      // 使用A/B测试拦截器调整挑战进度
+      const interceptedProgress = await gamificationABTestingInterceptorService.interceptChallengeProgressUpdate(
+        userId,
+        challengeId,
+        progress,
+        userChallenge.challenge.type
+      )
+      
       // 更新现有挑战记录
       const wasCompleted = userChallenge.completed
-      const isCompleted = progress >= 100
+      const isCompleted = interceptedProgress.shouldComplete
       const justCompleted = isCompleted && !wasCompleted
       
       const updatedChallenge = await prisma.userDailyChallenge.update({
@@ -845,7 +901,7 @@ export class GamificationService {
           }
         },
         data: {
-          progress,
+          progress: interceptedProgress.progress,
           completed: isCompleted,
           ...(justCompleted ? { completedAt: new Date() } : {})
         },
@@ -857,6 +913,13 @@ export class GamificationService {
       // 如果挑战刚刚完成，添加积分奖励
       if (justCompleted) {
         await this.addPoints(userId, updatedChallenge.challenge.points, PointTransactionType.CHALLENGE_COMPLETED, `完成挑战: ${updatedChallenge.challenge.title}`)
+        
+        // 触发挑战完成事件
+        await gamificationEventHandler.handleChallengeCompleted(userId, {
+          challengeId: updatedChallenge.challengeId,
+          challengeTitle: updatedChallenge.challenge.title,
+          points: updatedChallenge.challenge.points
+        })
         
         // 检查挑战相关的成就
         await this.checkChallengeAchievements(userId, updatedChallenge.challenge.type)
@@ -1037,7 +1100,7 @@ export class GamificationService {
   /**
    * 获取排行榜
    */
-  async getLeaderboard(type: LeaderboardType, period: LeaderboardPeriod, limit: number = 10): Promise<LeaderboardEntry[]> {
+  async getLeaderboard(type: LeaderboardType, period: LeaderboardPeriod, limit: number = 10, userId?: string): Promise<LeaderboardEntry[]> {
     // 根据类型和周期获取排行榜数据
     const now = new Date()
     let periodStart: Date
@@ -1060,6 +1123,22 @@ export class GamificationService {
       default:
         periodStart = new Date(0) // 从最早时间开始
         break
+    }
+    
+    // 使用A/B测试拦截器调整排行榜显示
+    let adjustedType = type
+    let adjustedLimit = limit
+    let leaderboardFilters: Record<string, unknown> = {}
+    
+    if (userId) {
+      const interceptedParams = await gamificationABTestingInterceptorService.interceptLeaderboardDisplay(
+        userId,
+        type,
+        limit
+      )
+      adjustedType = interceptedParams.leaderboardType as LeaderboardType
+      adjustedLimit = interceptedParams.limit
+      leaderboardFilters = interceptedParams.filters
     }
     
     // 构建查询条件
@@ -1401,7 +1480,10 @@ export class GamificationService {
   /**
    * 处理用户复习完成事件
    */
-  async handleReviewCompleted(userId: string, reviewData: { isCompleted: boolean }): Promise<void> {
+  async handleReviewCompleted(userId: string, reviewData: { isCompleted: boolean; accuracy?: number; timeSpent?: number }): Promise<void> {
+    // 使用A/B测试拦截器处理复习完成事件
+    await gamificationABTestingInterceptorService.interceptReviewCompletion(userId, reviewData)
+    
     // 添加复习积分奖励
     const points = reviewData.isCompleted ? 10 : 5 // 完成复习得10分，未完成得5分
     await this.addPoints(userId, points, PointTransactionType.REVIEW_COMPLETED, '完成复习')
@@ -1432,7 +1514,12 @@ export class GamificationService {
   /**
    * 处理用户创建记忆内容事件
    */
-  async handleMemoryCreated(userId: string): Promise<void> {
+  async handleMemoryCreated(userId: string, memoryData?: { difficulty: number; category: string }): Promise<void> {
+    // 使用A/B测试拦截器处理记忆内容创建事件
+    if (memoryData) {
+      await gamificationABTestingInterceptorService.interceptMemoryCreation(userId, memoryData)
+    }
+    
     // 添加创建记忆内容积分奖励
     await this.addPoints(userId, 5, PointTransactionType.MANUAL_ADJUST, '创建记忆内容')
     
@@ -1478,60 +1565,191 @@ export class GamificationService {
   /**
    * 创建每日挑战
    */
-  async createDailyChallenges(date?: Date): Promise<DailyChallenge[]> {
+  async createDailyChallenges(date?: Date, userId?: string): Promise<DailyChallenge[]> {
+    // 检查 Prisma 客户端是否已正确初始化
+    if (!isPrismaInitialized() || !prisma.dailyChallenge) {
+      throw new Error('数据库连接未正确初始化，无法创建每日挑战')
+    }
+
     const targetDate = date || new Date()
     targetDate.setHours(0, 0, 0, 0)
     
     // 检查是否已经为该日期创建了挑战
-    const existingChallenges = await prisma.dailyChallenge.findMany({
-      where: {
-        date: targetDate
-      }
-    })
+    let existingChallenges: DailyChallenge[] = []
+    try {
+      existingChallenges = await prisma.dailyChallenge.findMany({
+        where: {
+          date: targetDate
+        }
+      })
+    } catch (error) {
+      console.error('查询现有挑战失败:', error)
+      throw new Error(`查询现有挑战失败: ${error instanceof Error ? error.message : '未知错误'}`)
+    }
     
     if (existingChallenges.length > 0) {
       return existingChallenges
     }
     
-    // 默认挑战模板
-    const challengeTemplates = [
+    // 挑战模板接口
+    interface ChallengeTemplate {
+      title: string
+      description: string
+      type: ChallengeType
+      baseTarget: number
+      basePoints: number
+      condition?: string
+    }
+    
+    // 基础挑战模板
+    const baseChallengeTemplates: ChallengeTemplate[] = [
       {
         title: '每日复习',
         description: '完成10次复习',
         type: ChallengeType.REVIEW_COUNT,
-        target: 10,
-        points: 50
+        baseTarget: 10,
+        basePoints: 50
       },
       {
         title: '记忆创造者',
         description: '创建3个新记忆',
         type: ChallengeType.MEMORY_CREATED,
-        target: 3,
-        points: 30
+        baseTarget: 3,
+        basePoints: 30
       },
       {
         title: '类别专家',
         description: '复习5个特定类别的记忆',
         type: ChallengeType.CATEGORY_FOCUS,
-        target: 5,
-        points: 40
+        baseTarget: 5,
+        basePoints: 40
       },
       {
         title: '完美复习',
         description: '连续5次复习获得满分',
         type: ChallengeType.REVIEW_ACCURACY,
-        target: 5,
-        points: 60
+        baseTarget: 5,
+        basePoints: 60
       }
     ]
     
-    // 创建挑战
+    // 高级挑战模板（根据日期动态选择）
+    const advancedChallengeTemplates: ChallengeTemplate[] = [
+      {
+        title: '速度之王',
+        description: '在30分钟内完成5次复习',
+        type: ChallengeType.REVIEW_COUNT,
+        baseTarget: 5,
+        basePoints: 80,
+        condition: 'time_limit'
+      },
+      {
+        title: '连续学习专家',
+        description: '连续7天完成每日挑战',
+        type: ChallengeType.STREAK_DAYS,
+        baseTarget: 7,
+        basePoints: 100,
+        condition: 'consecutive_days'
+      },
+      {
+        title: '全能学习者',
+        description: '完成3个不同类别的复习',
+        type: ChallengeType.CATEGORY_FOCUS,
+        baseTarget: 3,
+        basePoints: 70,
+        condition: 'variety'
+      },
+      {
+        title: '周末冲刺',
+        description: '在一天内完成15次复习',
+        type: ChallengeType.REVIEW_COUNT,
+        baseTarget: 15,
+        basePoints: 90,
+        condition: 'weekend_only'
+      },
+      {
+        title: '完美一周',
+        description: '一周内完成所有每日挑战',
+        type: ChallengeType.REVIEW_COUNT,
+        baseTarget: 7,
+        basePoints: 150,
+        condition: 'weekly_completion'
+      }
+    ]
+    
+    // 根据用户等级和历史表现调整难度
+    let difficultyMultiplier = 1.0
+    if (userId) {
+      const profile = await this.getOrCreateProfile(userId)
+      
+      // 根据用户等级调整难度
+      if (profile.level >= 10) difficultyMultiplier = 1.5
+      else if (profile.level >= 5) difficultyMultiplier = 1.2
+      else if (profile.level >= 3) difficultyMultiplier = 1.1
+      
+      // 根据历史挑战完成率调整难度
+      const userChallengeStats = await this.getUserChallengeStats(userId)
+      const completionRate = userChallengeStats.total > 0
+        ? userChallengeStats.completed / userChallengeStats.total
+        : 0.5
+        
+      if (completionRate > 0.8) difficultyMultiplier *= 1.2
+      else if (completionRate < 0.3) difficultyMultiplier *= 0.8
+    }
+    
+    // 根据星期几选择挑战组合
+    const dayOfWeek = targetDate.getDay()
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+    const selectedTemplates: ChallengeTemplate[] = [...baseChallengeTemplates]
+    
+    // 周末添加特殊挑战
+    if (isWeekend) {
+      const weekendChallenge = advancedChallengeTemplates.find(t => t.condition === 'weekend_only')
+      if (weekendChallenge) selectedTemplates.push(weekendChallenge)
+    }
+    
+    // 随机选择一个高级挑战
+    const otherAdvancedChallenges = advancedChallengeTemplates.filter(
+      t => t.condition !== 'weekend_only'
+    )
+    if (otherAdvancedChallenges.length > 0) {
+      const randomIndex = Math.floor(Math.random() * otherAdvancedChallenges.length)
+      selectedTemplates.push(otherAdvancedChallenges[randomIndex])
+    }
+    
+    // 应用难度调整并创建挑战
     const createdChallenges: DailyChallenge[] = []
     
-    for (const template of challengeTemplates) {
+    for (const template of selectedTemplates) {
+      // 使用A/B测试拦截器调整挑战参数
+      // 只有当 userId 存在时才调用拦截器
+      let interceptedParams = { target: template.baseTarget, points: template.basePoints }
+      if (userId) {
+        try {
+          interceptedParams = await gamificationABTestingInterceptorService.interceptChallengeCreation(
+            userId,
+            template.baseTarget,
+            template.basePoints,
+            template.type
+          )
+        } catch (error) {
+          console.error('调用A/B测试拦截器失败，使用默认参数:', error)
+        }
+      }
+      
+      const adjustedTarget = Math.max(1, Math.floor(interceptedParams.target * difficultyMultiplier))
+      const adjustedPoints = Math.floor(interceptedParams.points * difficultyMultiplier)
+      
       const challenge = await prisma.dailyChallenge.create({
         data: {
-          ...template,
+          title: template.title,
+          description: template.description.replace(
+            template.baseTarget.toString(),
+            adjustedTarget.toString()
+          ),
+          type: template.type,
+          target: adjustedTarget,
+          points: adjustedPoints,
           date: targetDate,
           isActive: true
         }
@@ -1547,6 +1765,11 @@ export class GamificationService {
    * 为用户分配每日挑战
    */
   async assignDailyChallengesToUser(userId: string, date?: Date): Promise<UserDailyChallenge[]> {
+    // 检查 Prisma 客户端是否已正确初始化
+    if (!isPrismaInitialized() || !prisma.userDailyChallenge) {
+      throw new Error('数据库连接未正确初始化，无法分配每日挑战')
+    }
+
     const targetDate = date || new Date()
     targetDate.setHours(0, 0, 0, 0)
     
@@ -1558,30 +1781,41 @@ export class GamificationService {
     
     for (const challenge of dailyChallenges) {
       // 检查用户是否已经有这个挑战
-      const existing = await prisma.userDailyChallenge.findUnique({
-        where: {
-          userId_challengeId: {
-            userId,
-            challengeId: challenge.id
-          }
-        }
-      })
-      
-      if (!existing) {
-        const userChallenge = await prisma.userDailyChallenge.create({
-          data: {
-            userId,
-            challengeId: challenge.id,
-            progress: 0,
-            completed: false,
-            claimed: false
-          },
-          include: {
-            challenge: true
+      let existing: UserDailyChallenge | null = null
+      try {
+        existing = await prisma.userDailyChallenge.findUnique({
+          where: {
+            userId_challengeId: {
+              userId,
+              challengeId: challenge.id
+            }
           }
         })
-        
-        assignedChallenges.push(userChallenge)
+      } catch (error) {
+        console.error('查询用户挑战失败:', error)
+        throw new Error(`查询用户挑战失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      }
+      
+      if (!existing) {
+        try {
+          const userChallenge = await prisma.userDailyChallenge.create({
+            data: {
+              userId,
+              challengeId: challenge.id,
+              progress: 0,
+              completed: false,
+              claimed: false
+            },
+            include: {
+              challenge: true
+            }
+          })
+          
+          assignedChallenges.push(userChallenge)
+        } catch (error) {
+          console.error('创建用户挑战失败:', error)
+          throw new Error(`创建用户挑战失败: ${error instanceof Error ? error.message : '未知错误'}`)
+        }
       }
     }
     
@@ -1640,6 +1874,465 @@ export class GamificationService {
         isActive: false
       }
     })
+  }
+
+  /**
+   * 自动为所有用户分配每日挑战
+   */
+  async autoAssignDailyChallengesToAllUsers(): Promise<{ success: number; failed: number }> {
+    try {
+      // 获取所有活跃用户
+      const users = await prisma.user.findMany({
+        where: { isActive: true }
+      })
+
+      let successCount = 0
+      let failedCount = 0
+
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+
+      for (const user of users) {
+        try {
+          // 检查用户今天是否已经有挑战
+          const existingChallenges = await prisma.userDailyChallenge.findMany({
+            where: {
+              userId: user.id,
+              challenge: {
+                date: today
+              }
+            }
+          })
+
+          // 如果今天还没有挑战，则为用户分配
+          if (existingChallenges.length === 0) {
+            await this.assignDailyChallengesToUser(user.id, today)
+            successCount++
+          } else {
+            // 用户今天已经有挑战，也视为成功
+            successCount++
+          }
+        } catch (error) {
+          console.error(`为用户 ${user.id} 分配每日挑战失败:`, error)
+          failedCount++
+        }
+      }
+
+      return { success: successCount, failed: failedCount }
+    } catch (error) {
+      console.error('自动分配每日挑战失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 检查用户挑战进度是否满足条件
+   */
+  async checkChallengeProgressCondition(userId: string, condition: string, challengeId: string): Promise<boolean> {
+    try {
+      switch (condition) {
+        case 'time_limit': {
+          // 检查用户是否在30分钟内完成5次复习
+          const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000)
+          const recentReviews = await prisma.review.count({
+            where: {
+              userId,
+              reviewTime: {
+                gte: thirtyMinutesAgo
+              }
+            }
+          })
+          return recentReviews >= 5
+        }
+        
+        case 'consecutive_days': {
+          // 检查用户是否连续7天完成每日挑战
+          const sevenDaysAgo = new Date()
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+          sevenDaysAgo.setHours(0, 0, 0, 0)
+          
+          const dailyCompletions = await prisma.userDailyChallenge.findMany({
+            where: {
+              userId,
+              completed: true,
+              challenge: {
+                date: {
+                  gte: sevenDaysAgo
+                }
+              }
+            },
+            include: {
+              challenge: true
+            }
+          })
+          
+          // 按日期分组并检查是否有连续7天的完成记录
+          const completionByDate = new Map<string, boolean>()
+          
+          dailyCompletions.forEach(completion => {
+            const dateStr = completion.challenge.date.toISOString().split('T')[0]
+            completionByDate.set(dateStr, true)
+          })
+          
+          // 检查最近7天是否每天都有完成的挑战
+          for (let i = 0; i < 7; i++) {
+            const checkDate = new Date()
+            checkDate.setDate(checkDate.getDate() - i)
+            const dateStr = checkDate.toISOString().split('T')[0]
+            
+            if (!completionByDate.has(dateStr)) {
+              return false
+            }
+          }
+          
+          return true
+        }
+        
+        case 'variety': {
+          // 检查用户是否完成3个不同类别的复习
+          const today = new Date()
+          today.setHours(0, 0, 0, 0)
+          
+          // 通过 memoryContentId 关联查询记忆内容
+          const reviews = await prisma.review.findMany({
+            where: {
+              userId,
+              reviewTime: {
+                gte: today
+              }
+            },
+            include: {
+              memoryContent: {
+                select: {
+                  category: true
+                }
+              }
+            }
+          })
+          
+          const categories = new Set<string>()
+          reviews.forEach(review => {
+            if (review.memoryContent?.category) {
+              categories.add(review.memoryContent.category)
+            }
+          })
+          
+          return categories.size >= 3
+        }
+        
+        case 'weekend_only': {
+          // 检查是否是周末
+          const today = new Date()
+          const dayOfWeek = today.getDay()
+          return dayOfWeek === 0 || dayOfWeek === 6
+        }
+        
+        case 'weekly_completion': {
+          // 检查用户是否在一周内完成所有每日挑战
+          const oneWeekAgo = new Date()
+          oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
+          oneWeekAgo.setHours(0, 0, 0, 0)
+          
+          // 获取一周内所有的每日挑战
+          const dailyChallenges = await prisma.dailyChallenge.findMany({
+            where: {
+              date: {
+                gte: oneWeekAgo
+              },
+              isActive: true
+            }
+          })
+          
+          // 获取用户完成的挑战
+          const userChallenges = await prisma.userDailyChallenge.findMany({
+            where: {
+              userId,
+              completed: true,
+              challengeId: {
+                in: dailyChallenges.map(c => c.id)
+              }
+            }
+          })
+          
+          // 检查是否每天都有完成的挑战
+          const completionByDate = new Map<string, boolean>()
+          
+          userChallenges.forEach(userChallenge => {
+            const challenge = dailyChallenges.find(c => c.id === userChallenge.challengeId)
+            if (challenge) {
+              const dateStr = challenge.date.toISOString().split('T')[0]
+              completionByDate.set(dateStr, true)
+            }
+          })
+          
+          // 检查最近7天是否每天都有完成的挑战
+          for (let i = 0; i < 7; i++) {
+            const checkDate = new Date()
+            checkDate.setDate(checkDate.getDate() - i)
+            const dateStr = checkDate.toISOString().split('T')[0]
+            
+            if (!completionByDate.has(dateStr)) {
+              return false
+            }
+          }
+          
+          return true
+        }
+        
+        default:
+          return false
+      }
+    } catch (error) {
+      console.error('检查挑战进度条件失败:', error)
+      return false
+    }
+  }
+
+  /**
+   * 获取用户挑战完成率统计
+   */
+  async getUserChallengeCompletionRate(userId: string, days: number = 30): Promise<{
+    totalChallenges: number
+    completedChallenges: number
+    completionRate: number
+    dailyStats: Array<{ date: string; total: number; completed: number }>
+  }> {
+    try {
+      const startDate = new Date()
+      startDate.setDate(startDate.getDate() - days)
+      startDate.setHours(0, 0, 0, 0)
+      
+      // 获取指定时间范围内的所有挑战
+      const dailyChallenges = await prisma.dailyChallenge.findMany({
+        where: {
+          date: {
+            gte: startDate
+          },
+          isActive: true
+        }
+      })
+      
+      // 获取用户的挑战记录
+      const userChallenges = await prisma.userDailyChallenge.findMany({
+        where: {
+          userId,
+          challengeId: {
+            in: dailyChallenges.map(c => c.id)
+          }
+        },
+        include: {
+          challenge: true
+        }
+      })
+      
+      // 按日期统计
+      const statsByDate = new Map<string, { total: number; completed: number }>()
+      
+      // 初始化日期统计
+      for (let i = 0; i < days; i++) {
+        const date = new Date()
+        date.setDate(date.getDate() - i)
+        const dateStr = date.toISOString().split('T')[0]
+        statsByDate.set(dateStr, { total: 0, completed: 0 })
+      }
+      
+      // 统计每日挑战总数
+      dailyChallenges.forEach(challenge => {
+        const dateStr = challenge.date.toISOString().split('T')[0]
+        if (statsByDate.has(dateStr)) {
+          const stats = statsByDate.get(dateStr)!
+          stats.total++
+        }
+      })
+      
+      // 统计用户完成的挑战
+      userChallenges.forEach(userChallenge => {
+        const dateStr = userChallenge.challenge.date.toISOString().split('T')[0]
+        if (statsByDate.has(dateStr)) {
+          const stats = statsByDate.get(dateStr)!
+          if (userChallenge.completed) {
+            stats.completed++
+          }
+        }
+      })
+      
+      // 计算总体统计
+      let totalChallenges = 0
+      let completedChallenges = 0
+      
+      statsByDate.forEach(stats => {
+        totalChallenges += stats.total
+        completedChallenges += stats.completed
+      })
+      
+      const completionRate = totalChallenges > 0 ? completedChallenges / totalChallenges : 0
+      
+      // 转换为数组格式
+      const dailyStats = Array.from(statsByDate.entries()).map(([date, stats]) => ({
+        date,
+        total: stats.total,
+        completed: stats.completed
+      }))
+      
+      return {
+        totalChallenges,
+        completedChallenges,
+        completionRate,
+        dailyStats
+      }
+    } catch (error) {
+      console.error('获取用户挑战完成率统计失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 获取挑战排行榜
+   */
+  async getChallengeLeaderboard(type: 'completion' | 'points' | 'streak', period: 'daily' | 'weekly' | 'monthly' | 'all_time', limit: number = 10): Promise<Array<{
+    userId: string
+    username: string
+    avatar?: string | null
+    value: number
+    rank: number
+  }>> {
+    try {
+      let periodStart: Date
+      
+      switch (period) {
+        case 'daily':
+          periodStart = new Date()
+          periodStart.setHours(0, 0, 0, 0)
+          break
+        case 'weekly':
+          periodStart = new Date()
+          periodStart.setDate(periodStart.getDate() - 7)
+          break
+        case 'monthly':
+          periodStart = new Date()
+          periodStart.setMonth(periodStart.getMonth() - 1)
+          break
+        case 'all_time':
+        default:
+          periodStart = new Date(0) // 从最早时间开始
+          break
+      }
+      
+      let results: Array<{
+        userId: string
+        username: string
+        avatar?: string | null
+        value: number
+      }> = []
+      
+      switch (type) {
+        case 'completion': {
+          // 获取挑战完成率最高的用户
+          const completionData = await prisma.$queryRaw`
+            SELECT
+              u.id as userId,
+              u.username,
+              u.avatar,
+              COUNT(uc.id) as totalChallenges,
+              SUM(CASE WHEN uc.completed = true THEN 1 ELSE 0 END) as completedChallenges
+            FROM users u
+            LEFT JOIN user_daily_challenges uc ON u.id = uc.userId
+            LEFT JOIN daily_challenges dc ON uc.challengeId = dc.id
+            WHERE u.isActive = true
+            AND (dc.date >= ${periodStart} OR dc.date IS NULL)
+            GROUP BY u.id, u.username, u.avatar
+            HAVING COUNT(uc.id) > 0
+            ORDER BY completedChallenges DESC, totalChallenges ASC
+            LIMIT ${limit}
+          ` as Array<{
+            userId: string
+            username: string
+            avatar?: string | null
+            totalChallenges: number
+            completedChallenges: number
+          }>
+          
+          results = completionData.map(data => ({
+            userId: data.userId,
+            username: data.username,
+            avatar: data.avatar,
+            value: Math.round((data.completedChallenges / data.totalChallenges) * 100)
+          }))
+          break
+        }
+        
+        case 'points': {
+          // 获取挑战积分最高的用户
+          const pointsData = await prisma.$queryRaw`
+            SELECT
+              u.id as userId,
+              u.username,
+              u.avatar,
+              COALESCE(SUM(dc.points), 0) as totalPoints
+            FROM users u
+            LEFT JOIN user_daily_challenges uc ON u.id = uc.userId
+            LEFT JOIN daily_challenges dc ON uc.challengeId = dc.id
+            WHERE u.isActive = true
+            AND uc.completed = true
+            AND (dc.date >= ${periodStart} OR dc.date IS NULL)
+            GROUP BY u.id, u.username, u.avatar
+            ORDER BY totalPoints DESC
+            LIMIT ${limit}
+          ` as Array<{
+            userId: string
+            username: string
+            avatar?: string | null
+            totalPoints: number
+          }>
+          
+          results = pointsData.map(data => ({
+            userId: data.userId,
+            username: data.username,
+            avatar: data.avatar,
+            value: data.totalPoints
+          }))
+          break
+        }
+        
+        case 'streak': {
+          // 获取连续完成挑战天数最多的用户
+          const streakData = await prisma.$queryRaw`
+            SELECT
+              u.id as userId,
+              u.username,
+              u.avatar,
+              gp.streak
+            FROM users u
+            JOIN gamification_profiles gp ON u.id = gp.userId
+            WHERE u.isActive = true
+            ORDER BY gp.streak DESC
+            LIMIT ${limit}
+          ` as Array<{
+            userId: string
+            username: string
+            avatar?: string | null
+            streak: number
+          }>
+          
+          results = streakData.map(data => ({
+            userId: data.userId,
+            username: data.username,
+            avatar: data.avatar,
+            value: data.streak
+          }))
+          break
+        }
+      }
+      
+      // 添加排名
+      return results.map((result, index) => ({
+        ...result,
+        rank: index + 1
+      }))
+    } catch (error) {
+      console.error('获取挑战排行榜失败:', error)
+      throw error
+    }
   }
 }
 

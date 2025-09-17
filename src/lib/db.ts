@@ -31,31 +31,61 @@ const createPrismaClient = () => {
   
   console.log('Initializing Prisma client with database URL:', finalDatabaseUrl.replace(/:([^:@]+)@/, ':***@'))
   
-  const client = new PrismaClient({
-    datasources: {
-      db: {
-        url: finalDatabaseUrl
+  try {
+    const client = new PrismaClient({
+      datasources: {
+        db: {
+          url: finalDatabaseUrl
+        }
+      },
+      log: ['query', 'info', 'warn', 'error'],
+    })
+    
+    // 添加连接错误处理
+    // 注意：Prisma 5.0.0+ 版本中，库引擎不再支持 "beforeExit" 钩子
+    // 改为监听 Node.js 的 process 对象的 'beforeExit' 事件
+    process.on('beforeExit', async () => {
+      try {
+        await client.$disconnect()
+        console.log('Prisma client disconnected')
+      } catch (disconnectError) {
+        console.error('Error disconnecting Prisma client:', disconnectError)
       }
-    },
-    log: ['query', 'info', 'warn', 'error'],
-  })
-  
-  // 添加连接错误处理
-  // 注意：Prisma 5.0.0+ 版本中，库引擎不再支持 "beforeExit" 钩子
-  // 改为监听 Node.js 的 process 对象的 'beforeExit' 事件
-  process.on('beforeExit', async () => {
-    await client.$disconnect()
-    console.log('Prisma client disconnected')
-  })
-  
-  return client
+    })
+    
+    return client
+  } catch (error) {
+    console.error('Failed to initialize Prisma client:', error)
+    throw new Error(`Failed to initialize Prisma client: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient()
+// 安全地导出 Prisma 客户端
+let prismaInstance: PrismaClient
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma
-  console.log('Prisma client initialized in development mode')
-} else {
-  console.log('Prisma client initialized in production mode')
+try {
+  prismaInstance = globalForPrisma.prisma ?? createPrismaClient()
+  
+  if (process.env.NODE_ENV !== 'production') {
+    globalForPrisma.prisma = prismaInstance
+    console.log('Prisma client initialized in development mode')
+  } else {
+    console.log('Prisma client initialized in production mode')
+  }
+} catch (error) {
+  console.error('Failed to initialize Prisma client:', error)
+  // 在开发环境中，我们希望立即看到错误
+  if (process.env.NODE_ENV !== 'production') {
+    throw error
+  }
+  // 在生产环境中，我们创建一个空对象以防止应用崩溃
+  // 但会在实际使用时抛出错误
+  prismaInstance = {} as PrismaClient
+}
+
+export const prisma = prismaInstance
+
+// 添加一个辅助函数来检查 Prisma 客户端是否已正确初始化
+export const isPrismaInitialized = (): boolean => {
+  return prisma && typeof prisma.$connect === 'function'
 }

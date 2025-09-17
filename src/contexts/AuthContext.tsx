@@ -167,10 +167,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     try {
       await signOut({ redirect: false })
+      // 使用 Next.js 的路由器进行导航，而不是直接操作 window.location
+      const router = require('next/router').default
+      router.push('/auth/signin')
     } catch (error) {
       console.error("登出错误:", error)
       // 即使登出失败，也尝试重定向到登录页
-      window.location.href = "/auth/signin"
+      const router = require('next/router').default
+      router.push('/auth/signin')
     }
   }
 

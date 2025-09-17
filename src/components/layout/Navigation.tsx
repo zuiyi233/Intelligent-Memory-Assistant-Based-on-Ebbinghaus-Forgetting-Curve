@@ -32,6 +32,11 @@ const navigationItems = [
     icon: BarChart3,
   },
   {
+    name: "用户行为分析",
+    href: "/analytics",
+    icon: BarChart3,
+  },
+  {
     name: "个人中心",
     href: "/profile",
     icon: User,
