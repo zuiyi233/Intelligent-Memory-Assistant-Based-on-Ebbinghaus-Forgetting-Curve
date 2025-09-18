@@ -1,4 +1,7 @@
-import { prisma } from '@/lib/db'
+import { isPrismaInitialized } from '@/lib/db'
+
+// 检查是否在服务端环境
+const isServerSide = typeof window === 'undefined'
 
 // 临时定义类型，直到Prisma客户端更新
 export enum LearningStyleType {
@@ -113,7 +116,16 @@ export class LearningStyleService {
       metadata?: Record<string, unknown>
     } = {}
   ): Promise<void> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('LearningStyleService.recordBehaviorEvent 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
       await prisma.userBehaviorEvent.create({
         data: {
           userId,
@@ -124,7 +136,7 @@ export class LearningStyleService {
           accuracy: data.accuracy || 0,
           difficulty: data.difficulty || 1,
           success: data.success || false,
-          metadata: data.metadata as Record<string, unknown> || {},
+          metadata: JSON.parse(JSON.stringify(data.metadata || {})),
           timestamp: new Date()
         }
       })
@@ -138,7 +150,16 @@ export class LearningStyleService {
    * 获取用户行为历史
    */
   async getUserBehaviorHistory(userId: string, limit: number = 100): Promise<BehaviorEvent[]> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('LearningStyleService.getUserBehaviorHistory 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
       const events = await prisma.userBehaviorEvent.findMany({
         where: { userId },
         orderBy: { timestamp: 'desc' },
@@ -146,8 +167,8 @@ export class LearningStyleService {
       })
 
       return events.map(event => ({
-        eventType: event.eventType,
-        contentType: event.contentType || undefined,
+        eventType: event.eventType as UserBehaviorEventType,
+        contentType: event.contentType as LearningContentType || undefined,
         categoryId: event.categoryId || undefined,
         timeSpent: event.timeSpent || undefined,
         accuracy: event.accuracy || undefined,
@@ -233,7 +254,12 @@ export class LearningStyleService {
   /**
    * 计算学习风格分数
    */
-  private calculateLearningStyleScores(events: BehaviorEvent[]): typeof scores {
+  private calculateLearningStyleScores(events: BehaviorEvent[]): {
+    visual: number;
+    auditory: number;
+    kinesthetic: number;
+    reading: number;
+  } {
     const scores = {
       visual: 0,
       auditory: 0,
@@ -337,7 +363,12 @@ export class LearningStyleService {
   /**
    * 计算分析置信度
    */
-  private calculateConfidence(scores: typeof scores, dataPoints: number): number {
+  private calculateConfidence(scores: {
+    visual: number;
+    auditory: number;
+    kinesthetic: number;
+    reading: number;
+  }, dataPoints: number): number {
     // 计算分数分布的方差
     const mean = Object.values(scores).reduce((sum, score) => sum + score, 0) / 4
     const variance = Object.values(scores).reduce((sum, score) => sum + Math.pow(score - mean, 2), 0) / 4
@@ -354,7 +385,12 @@ export class LearningStyleService {
   /**
    * 生成个性化建议
    */
-  private generateRecommendations(scores: typeof scores, primaryStyle: LearningStyleType): string[] {
+  private generateRecommendations(scores: {
+    visual: number;
+    auditory: number;
+    kinesthetic: number;
+    reading: number;
+  }, primaryStyle: LearningStyleType): string[] {
     const recommendations: string[] = []
     
     // 基于主要学习风格的建议
@@ -415,7 +451,7 @@ export class LearningStyleService {
   /**
    * 获取学习风格名称
    */
-  private getStyleName(styleKey: keyof typeof scores): string {
+  private getStyleName(styleKey: 'visual' | 'auditory' | 'kinesthetic' | 'reading'): string {
     switch (styleKey) {
       case 'visual': return '视觉'
       case 'auditory': return '听觉'
@@ -440,7 +476,16 @@ export class LearningStyleService {
       dataPoints: number
     }
   ): Promise<void> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('LearningStyleService.saveAnalysisResult 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
       // 查找或创建学习风格记录
       let learningStyle = await prisma.userLearningStyle.findUnique({
         where: { userId }
@@ -487,10 +532,30 @@ export class LearningStyleService {
    * 获取用户学习风格
    */
   async getUserLearningStyle(userId: string): Promise<UserLearningStyle | null> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('LearningStyleService.getUserLearningStyle 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
-      return await prisma.userLearningStyle.findUnique({
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
+      const result = await prisma.userLearningStyle.findUnique({
         where: { userId }
       })
+
+      if (!result) {
+        return null
+      }
+
+      // 转换枚举类型
+      return {
+        ...result,
+        primaryStyle: result.primaryStyle as LearningStyleType,
+        secondaryStyle: result.secondaryStyle as LearningStyleType || undefined
+      }
     } catch (error) {
       console.error('获取用户学习风格失败:', error)
       return null
@@ -507,6 +572,12 @@ export class LearningStyleService {
     interactionLevel: number // 0-1
     feedbackStyle: 'visual' | 'textual' | 'mixed'
   }> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('LearningStyleService.getPersonalizedGamificationConfig 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
       const learningStyle = await this.getUserLearningStyle(userId)
       

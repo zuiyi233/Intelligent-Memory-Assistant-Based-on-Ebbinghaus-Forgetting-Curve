@@ -1,4 +1,29 @@
-import { prisma } from '@/lib/db'
+import { isPrismaInitialized } from '@/lib/db'
+
+// Prisma 类型定义
+type UserBehaviorEventType =
+  | 'REVIEW_COMPLETED'
+  | 'MEMORY_CREATED'
+  | 'CATEGORY_FOCUS'
+  | 'TIME_SPENT'
+  | 'ACCURACY_HIGH'
+  | 'ACCURACY_LOW'
+  | 'STREAK_MAINTAINED'
+  | 'CHALLENGE_COMPLETED'
+  | 'ACHIEVEMENT_UNLOCKED'
+  | 'LEVEL_UP'
+  | 'POINTS_EARNED'
+  | 'UI_INTERACTION'
+  | 'THEME_CHANGED'
+  | 'CUSTOMIZATION'
+
+type LearningContentType =
+  | 'TEXT'
+  | 'IMAGE'
+  | 'AUDIO'
+  | 'VIDEO'
+  | 'INTERACTIVE'
+  | 'QUIZ'
 
 // 扩展用户行为事件类型
 export enum ExtendedUserBehaviorEventType {
@@ -33,6 +58,9 @@ export enum ExtendedUserBehaviorEventType {
   SOCIAL_INTERACTION = 'SOCIAL_INTERACTION'    // 社交互动
 }
 
+// 检查是否在服务端环境
+const isServerSide = typeof window === 'undefined'
+
 // 扩展学习内容类型
 export enum ExtendedLearningContentType {
   TEXT = 'TEXT',
@@ -45,6 +73,30 @@ export enum ExtendedLearningContentType {
   ARTICLE = 'ARTICLE',         // 新增：文章
   COURSE = 'COURSE',           // 新增：课程
   EXERCISE = 'EXERCISE'        // 新增：练习
+}
+
+// 复习记录接口
+interface Review {
+  id: string
+  userId: string
+  memoryContentId: string
+  reviewTime: Date
+  isCorrect?: boolean
+  reviewScore?: number
+  difficulty?: number
+  createdAt: Date
+}
+
+// 记忆内容接口
+interface MemoryContent {
+  id: string
+  userId: string
+  title: string
+  content: string
+  categoryId?: string
+  difficulty?: number
+  createdAt: Date
+  updatedAt: Date
 }
 
 // 用户行为数据接口
@@ -244,18 +296,64 @@ export class UserBehaviorAnalysisService {
       metadata?: Record<string, unknown>
     }
   ): Promise<void> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('UserBehaviorAnalysisService.recordUserBehaviorEvent 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+      
+      // 将扩展的事件类型转换为 Prisma 兼容的类型
+      const validEventTypes: UserBehaviorEventType[] = [
+        'REVIEW_COMPLETED',
+        'MEMORY_CREATED',
+        'CATEGORY_FOCUS',
+        'TIME_SPENT',
+        'ACCURACY_HIGH',
+        'ACCURACY_LOW',
+        'STREAK_MAINTAINED',
+        'CHALLENGE_COMPLETED',
+        'ACHIEVEMENT_UNLOCKED',
+        'LEVEL_UP',
+        'POINTS_EARNED',
+        'UI_INTERACTION',
+        'THEME_CHANGED',
+        'CUSTOMIZATION'
+      ]
+
+      const validContentTypes: LearningContentType[] = [
+        'TEXT',
+        'IMAGE',
+        'AUDIO',
+        'VIDEO',
+        'INTERACTIVE',
+        'QUIZ'
+      ]
+
+      // 如果事件类型不在 Prisma 枚举中，使用默认值
+      const prismaEventType = validEventTypes.includes(eventType as UserBehaviorEventType)
+        ? eventType as UserBehaviorEventType
+        : 'UI_INTERACTION'
+
+      // 如果内容类型不在 Prisma 枚举中，使用默认值或 null
+      const prismaContentType = data?.contentType && validContentTypes.includes(data.contentType as LearningContentType)
+        ? data.contentType as LearningContentType
+        : undefined
+      
       await prisma.userBehaviorEvent.create({
         data: {
           userId,
-          eventType,
-          contentType: data?.contentType,
+          eventType: prismaEventType,
+          contentType: prismaContentType,
           categoryId: data?.categoryId,
           timeSpent: data?.timeSpent || 0,
           accuracy: data?.accuracy || 0.0,
           difficulty: data?.difficulty || 1,
           success: data?.success || false,
-          metadata: data?.metadata || {},
+          metadata: JSON.parse(JSON.stringify(data?.metadata || {})),
           timestamp: new Date()
         }
       })
@@ -284,20 +382,68 @@ export class UserBehaviorAnalysisService {
       }
     }>
   ): Promise<void> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('UserBehaviorAnalysisService.batchRecordUserBehaviorEvents 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+      
+      // 将扩展的事件类型转换为 Prisma 兼容的类型
+      const validEventTypes: UserBehaviorEventType[] = [
+        'REVIEW_COMPLETED',
+        'MEMORY_CREATED',
+        'CATEGORY_FOCUS',
+        'TIME_SPENT',
+        'ACCURACY_HIGH',
+        'ACCURACY_LOW',
+        'STREAK_MAINTAINED',
+        'CHALLENGE_COMPLETED',
+        'ACHIEVEMENT_UNLOCKED',
+        'LEVEL_UP',
+        'POINTS_EARNED',
+        'UI_INTERACTION',
+        'THEME_CHANGED',
+        'CUSTOMIZATION'
+      ]
+
+      const validContentTypes: LearningContentType[] = [
+        'TEXT',
+        'IMAGE',
+        'AUDIO',
+        'VIDEO',
+        'INTERACTIVE',
+        'QUIZ'
+      ]
+
       await prisma.userBehaviorEvent.createMany({
-        data: events.map(event => ({
-          userId: event.userId,
-          eventType: event.eventType,
-          contentType: event.data?.contentType,
-          categoryId: event.data?.categoryId,
-          timeSpent: event.data?.timeSpent || 0,
-          accuracy: event.data?.accuracy || 0.0,
-          difficulty: event.data?.difficulty || 1,
-          success: event.data?.success || false,
-          metadata: event.data?.metadata || {},
-          timestamp: new Date()
-        }))
+        data: events.map(event => {
+          // 如果事件类型不在 Prisma 枚举中，使用默认值
+          const prismaEventType = validEventTypes.includes(event.eventType as UserBehaviorEventType)
+            ? event.eventType as UserBehaviorEventType
+            : 'UI_INTERACTION'
+
+          // 如果内容类型不在 Prisma 枚举中，使用默认值或 null
+          const prismaContentType = event.data?.contentType && validContentTypes.includes(event.data.contentType as LearningContentType)
+            ? event.data.contentType as LearningContentType
+            : undefined
+
+          return {
+            userId: event.userId,
+            eventType: prismaEventType,
+            contentType: prismaContentType,
+            categoryId: event.data?.categoryId,
+            timeSpent: event.data?.timeSpent || 0,
+            accuracy: event.data?.accuracy || 0.0,
+            difficulty: event.data?.difficulty || 1,
+            success: event.data?.success || false,
+            metadata: JSON.parse(JSON.stringify(event.data?.metadata || {})),
+            timestamp: new Date()
+          }
+        })
       })
     } catch (error) {
       console.error('批量记录用户行为事件失败:', error)
@@ -312,97 +458,192 @@ export class UserBehaviorAnalysisService {
    * @returns 用户行为分析数据
    */
   async getUserBehaviorAnalysis(userId: string, days: number = 30): Promise<UserBehaviorData> {
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - days)
-
-    // 获取用户的基本信息
-    const user = await prisma.user.findUnique({
-      where: { id: userId }
-    })
-
-    if (!user) {
-      throw new Error('用户不存在')
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('UserBehaviorAnalysisService.getUserBehaviorAnalysis 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
     }
 
-    // 获取用户的行为事件日志
-    const userBehaviorEvents = await prisma.userBehaviorEvent.findMany({
-      where: {
-        userId,
-        timestamp: {
-          gte: startDate,
-          lte: endDate
-        }
-      },
-      orderBy: {
-        timestamp: 'asc'
+    try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
+      const endDate = new Date()
+      const startDate = new Date()
+      startDate.setDate(startDate.getDate() - days)
+
+      // 获取用户的基本信息
+      const user = await prisma.user.findUnique({
+        where: { id: userId }
+      })
+
+      if (!user) {
+        throw new Error('用户不存在')
       }
-    })
 
-    // 获取用户的记忆内容记录
-    const memories = await prisma.memoryContent.findMany({
-      where: {
-        userId,
-        createdAt: {
-          gte: startDate,
-          lte: endDate
+      // 获取用户的行为事件日志
+      const userBehaviorEvents = await prisma.userBehaviorEvent.findMany({
+        where: {
+          userId,
+          timestamp: {
+            gte: startDate,
+            lte: endDate
+          }
+        },
+        orderBy: {
+          timestamp: 'asc'
+        }
+      })
+
+      // 获取用户的记忆内容记录
+      const memories = await prisma.memoryContent.findMany({
+        where: {
+          userId,
+          createdAt: {
+            gte: startDate,
+            lte: endDate
+          }
+        }
+      })
+
+      // 获取用户的复习记录
+      const reviews = await prisma.review.findMany({
+        where: {
+          userId,
+          reviewTime: {
+            gte: startDate,
+            lte: endDate
+          }
+        }
+      })
+
+      // 获取用户的积分交易记录
+      const pointTransactions = await prisma.pointTransaction.findMany({
+        where: {
+          userId,
+          createdAt: {
+            gte: startDate,
+            lte: endDate
+          }
+        }
+      })
+
+      // 将 Prisma 返回的事件转换为扩展类型
+      const extendedUserBehaviorEvents: UserBehaviorEventLog[] = userBehaviorEvents.map(event => ({
+        id: event.id,
+        userId: event.userId,
+        eventType: event.eventType as ExtendedUserBehaviorEventType,
+        contentType: event.contentType as ExtendedLearningContentType || undefined,
+        categoryId: event.categoryId || undefined,
+        timeSpent: event.timeSpent || 0,
+        accuracy: event.accuracy || 0,
+        difficulty: event.difficulty || 1,
+        success: event.success || false,
+        metadata: event.metadata as Record<string, unknown>,
+        timestamp: event.timestamp
+      }))
+
+      // 计算活动模式
+      const activityPatterns = this.calculateActivityPatterns(extendedUserBehaviorEvents, startDate, endDate)
+
+      // 计算功能使用情况
+      const featureUsage = this.calculateFeatureUsage(extendedUserBehaviorEvents)
+
+      // 将 Prisma 返回的复习记录转换为 Review 类型
+      const convertedReviewsForLearning: Review[] = reviews.map(review => ({
+        id: review.id,
+        userId: review.userId,
+        memoryContentId: review.memoryContentId,
+        reviewTime: review.reviewTime,
+        isCorrect: review.isCompleted, // 使用 isCompleted 作为 isCorrect
+        reviewScore: review.reviewScore || 0,
+        difficulty: 1, // 默认难度值
+        createdAt: review.reviewTime // 使用 reviewTime 作为 createdAt
+      }))
+
+      // 计算学习模式
+      const learningPatterns = this.calculateLearningPatterns(memories, convertedReviewsForLearning, startDate, endDate)
+
+      // 计算参与度指标
+      const engagementMetrics = this.calculateEngagementMetrics(extendedUserBehaviorEvents)
+
+      // 计算行为变化
+      const behaviorChanges = await this.calculateBehaviorChanges(userId, extendedUserBehaviorEvents)
+
+      // 将 Prisma 返回的复习记录转换为 Review 类型
+      const convertedReviews: Review[] = reviews.map(review => ({
+        id: review.id,
+        userId: review.userId,
+        memoryContentId: review.memoryContentId,
+        reviewTime: review.reviewTime,
+        isCorrect: review.isCompleted, // 使用 isCompleted 作为 isCorrect
+        reviewScore: review.reviewScore || 0,
+        difficulty: 1, // 默认难度值
+        createdAt: review.reviewTime // 使用 reviewTime 作为 createdAt
+      }))
+
+      // 计算预测性洞察
+      const predictiveInsights = this.calculatePredictiveInsights(extendedUserBehaviorEvents, convertedReviews)
+
+      // 计算社交行为
+      const socialBehavior = this.calculateSocialBehavior(extendedUserBehaviorEvents)
+
+      // 添加缺失的属性以满足接口要求
+      const enhancedActivityPatterns = {
+        ...activityPatterns,
+        monthlyActivity: [] // 暂时为空，可以根据需要实现
+      }
+
+      const enhancedFeatureUsage = {
+        ...featureUsage,
+        featureUsageTrends: [] // 暂时为空，可以根据需要实现
+      }
+
+      const enhancedLearningPatterns = {
+        ...learningPatterns,
+        learningEfficiency: {
+          optimalLearningTimes: [],
+          averageTimePerItem: 0,
+          learningVelocity: 0
+        },
+        learningPreferences: {
+          preferredContentTypes: [],
+          preferredDifficulty: [],
+          preferredCategories: []
         }
       }
-    })
 
-    // 获取用户的复习记录
-    const reviews = await prisma.review.findMany({
-      where: {
-        userId,
-        reviewTime: {
-          gte: startDate,
-          lte: endDate
+      const enhancedEngagementMetrics = {
+        ...engagementMetrics,
+        depthEngagement: {
+          averageActionsPerSession: 0,
+          featureExplorationRate: 0,
+          contentInteractionDepth: 0
+        },
+        timeDistribution: {
+          peakUsageHours: [],
+          weekdayVsWeekend: {
+            weekdayActivity: 0,
+            weekendActivity: 0,
+            differencePercentage: 0
+          }
         }
       }
-    })
 
-    // 获取用户的积分交易记录
-    const pointTransactions = await prisma.pointTransaction.findMany({
-      where: {
+      return {
         userId,
-        createdAt: {
-          gte: startDate,
-          lte: endDate
-        }
+        period: `${startDate.toISOString().split('T')[0]} 至 ${endDate.toISOString().split('T')[0]}`,
+        activityPatterns: enhancedActivityPatterns,
+        featureUsage: enhancedFeatureUsage,
+        learningPatterns: enhancedLearningPatterns,
+        engagementMetrics: enhancedEngagementMetrics,
+        behaviorChanges,
+        predictiveInsights,
+        socialBehavior
       }
-    })
-
-    // 计算活动模式
-    const activityPatterns = this.calculateActivityPatterns(userBehaviorEvents, startDate, endDate)
-
-    // 计算功能使用情况
-    const featureUsage = this.calculateFeatureUsage(userBehaviorEvents)
-
-    // 计算学习模式
-    const learningPatterns = this.calculateLearningPatterns(memories, reviews, startDate, endDate)
-
-    // 计算参与度指标
-    const engagementMetrics = this.calculateEngagementMetrics(userBehaviorEvents)
-
-    // 计算行为变化
-    const behaviorChanges = await this.calculateBehaviorChanges(userId, userBehaviorEvents)
-
-    // 计算预测性洞察
-    const predictiveInsights = this.calculatePredictiveInsights(userBehaviorEvents, reviews)
-
-    // 计算社交行为
-    const socialBehavior = this.calculateSocialBehavior(userBehaviorEvents)
-
-    return {
-      userId,
-      period: `${startDate.toISOString().split('T')[0]} 至 ${endDate.toISOString().split('T')[0]}`,
-      activityPatterns,
-      featureUsage,
-      learningPatterns,
-      engagementMetrics,
-      behaviorChanges,
-      predictiveInsights,
-      socialBehavior
+    } catch (error) {
+      console.error('获取用户行为分析失败:', error)
+      throw new Error('获取用户行为分析失败')
     }
   }
 
@@ -423,51 +664,80 @@ export class UserBehaviorAnalysisService {
       decreasing: Array<{ featureName: string; growthRate: number }>
     }
   }> {
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - days)
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('UserBehaviorAnalysisService.getSystemBehaviorSummary 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
 
-    // 获取总用户数
-    const totalUsers = await prisma.user.count()
+    try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
 
-    // 获取活跃用户数（在过去30天内有活动）
-    const activeUsers = await prisma.user.count({
-      where: {
-        userBehaviorEvents: {
-          some: {
-            timestamp: {
-              gte: startDate
+      const endDate = new Date()
+      const startDate = new Date()
+      startDate.setDate(startDate.getDate() - days)
+
+      // 获取总用户数
+      const totalUsers = await prisma.user.count()
+
+      // 获取活跃用户数（在过去30天内有活动）
+      const activeUsers = await prisma.user.count({
+        where: {
+          userBehaviorEvents: {
+            some: {
+              timestamp: {
+                gte: startDate
+              }
             }
           }
         }
-      }
-    })
+      })
 
-    // 获取所有用户行为事件
-    const allUserBehaviorEvents = await prisma.userBehaviorEvent.findMany({
-      where: {
-        timestamp: {
-          gte: startDate,
-          lte: endDate
+      // 获取所有用户行为事件
+      const allUserBehaviorEvents = await prisma.userBehaviorEvent.findMany({
+        where: {
+          timestamp: {
+            gte: startDate,
+            lte: endDate
+          }
         }
+      })
+
+      // 将 Prisma 返回的事件转换为扩展类型
+      const extendedUserBehaviorEvents: UserBehaviorEventLog[] = allUserBehaviorEvents.map(event => ({
+        id: event.id,
+        userId: event.userId,
+        eventType: event.eventType as ExtendedUserBehaviorEventType,
+        contentType: event.contentType as ExtendedLearningContentType || undefined,
+        categoryId: event.categoryId || undefined,
+        timeSpent: event.timeSpent || 0,
+        accuracy: event.accuracy || 0,
+        difficulty: event.difficulty || 1,
+        success: event.success || false,
+        metadata: event.metadata as Record<string, unknown>,
+        timestamp: event.timestamp
+      }))
+
+      // 计算平均会话长度
+      const averageSessionLength = this.calculateAverageSessionLength(extendedUserBehaviorEvents)
+
+      // 获取热门功能
+      const topFeatures = this.getTopFeatures(extendedUserBehaviorEvents)
+
+      // 获取行为趋势
+      const behaviorTrends = await this.getBehaviorTrends(startDate, endDate)
+
+      return {
+        totalUsers,
+        activeUsers,
+        averageSessionLength,
+        topFeatures,
+        behaviorTrends
       }
-    })
-
-    // 计算平均会话长度
-    const averageSessionLength = this.calculateAverageSessionLength(allUserBehaviorEvents)
-
-    // 获取热门功能
-    const topFeatures = this.getTopFeatures(allUserBehaviorEvents)
-
-    // 获取行为趋势
-    const behaviorTrends = await this.getBehaviorTrends(startDate, endDate)
-
-    return {
-      totalUsers,
-      activeUsers,
-      averageSessionLength,
-      topFeatures,
-      behaviorTrends
+    } catch (error) {
+      console.error('获取系统行为分析摘要失败:', error)
+      throw new Error('获取系统行为分析摘要失败')
     }
   }
 
@@ -497,7 +767,7 @@ export class UserBehaviorAnalysisService {
 
     // 处理用户日志
     for (const log of userLogs) {
-      const date = new Date(log.createdAt)
+      const date = new Date(log.timestamp)
       const dateStr = date.toISOString().split('T')[0]
       const hour = date.getHours()
       const dayOfWeek = daysOfWeek[date.getDay()]
@@ -577,9 +847,9 @@ export class UserBehaviorAnalysisService {
   /**
    * 计算学习模式
    */
-  private calculateLearningPatterns(memories: any[], reviews: any[], startDate: Date, endDate: Date) {
+  private calculateLearningPatterns(memories: MemoryContent[], reviews: Review[], startDate: Date, endDate: Date) {
     // 按日期分组复习记录
-    const reviewsByDate: Record<string, any[]> = {}
+    const reviewsByDate: Record<string, Review[]> = {}
     
     for (const review of reviews) {
       const date = new Date(review.createdAt).toISOString().split('T')[0]
@@ -599,7 +869,7 @@ export class UserBehaviorAnalysisService {
 
     for (const [date, dayReviews] of Object.entries(reviewsByDate)) {
       const itemsReviewed = dayReviews.length
-      const correctReviews = dayReviews.filter((review: any) => review.isCorrect).length
+      const correctReviews = dayReviews.filter((review: Review) => review.isCorrect).length
       const accuracy = itemsReviewed > 0 ? (correctReviews / itemsReviewed) * 100 : 0
       
       // 假设每个复习项目平均花费1分钟
@@ -634,7 +904,7 @@ export class UserBehaviorAnalysisService {
     }> = []
 
     // 按周分组复习记录
-    const reviewsByWeek: Record<string, any[]> = {}
+    const reviewsByWeek: Record<string, Review[]> = {}
     
     for (const review of reviews) {
       const date = new Date(review.createdAt)
@@ -650,10 +920,10 @@ export class UserBehaviorAnalysisService {
 
     // 计算每周的平均难度和成功率
     for (const [week, weekReviews] of Object.entries(reviewsByWeek)) {
-      const totalDifficulty = weekReviews.reduce((sum: number, review: any) => sum + (review.difficulty || 1), 0)
+      const totalDifficulty = weekReviews.reduce((sum: number, review: Review) => sum + (review.difficulty || 1), 0)
       const averageDifficulty = weekReviews.length > 0 ? totalDifficulty / weekReviews.length : 0
       
-      const correctReviews = weekReviews.filter((review: any) => review.isCorrect).length
+      const correctReviews = weekReviews.filter((review: Review) => review.isCorrect).length
       const successRate = weekReviews.length > 0 ? (correctReviews / weekReviews.length) * 100 : 0
 
       difficultyProgression.push({
@@ -676,9 +946,9 @@ export class UserBehaviorAnalysisService {
   /**
    * 计算参与度指标
    */
-  private calculateEngagementMetrics(userLogs: any[]) {
+  private calculateEngagementMetrics(userLogs: UserBehaviorEventLog[]) {
     // 按用户分组日志
-    const logsByUser: Record<string, any[]> = {}
+    const logsByUser: Record<string, UserBehaviorEventLog[]> = {}
     
     for (const log of userLogs) {
       if (!logsByUser[log.userId]) {
@@ -697,10 +967,10 @@ export class UserBehaviorAnalysisService {
 
     for (const [userId, userLogs] of Object.entries(logsByUser)) {
       // 按日期分组日志
-      const logsByDate: Record<string, any[]> = {}
+      const logsByDate: Record<string, UserBehaviorEventLog[]> = {}
       
       for (const log of userLogs) {
-        const date = new Date(log.createdAt).toISOString().split('T')[0]
+        const date = new Date(log.timestamp).toISOString().split('T')[0]
         if (!logsByDate[date]) {
           logsByDate[date] = []
         }
@@ -749,16 +1019,16 @@ export class UserBehaviorAnalysisService {
   /**
    * 计算平均会话长度
    */
-  private calculateAverageSessionLength(userLogs: any[]) {
+  private calculateAverageSessionLength(userLogs: UserBehaviorEventLog[]) {
     // 按用户和日期分组日志
-    const logsByUserAndDate: Record<string, Record<string, any[]>> = {}
+    const logsByUserAndDate: Record<string, Record<string, UserBehaviorEventLog[]>> = {}
     
     for (const log of userLogs) {
       if (!logsByUserAndDate[log.userId]) {
         logsByUserAndDate[log.userId] = {}
       }
       
-      const date = new Date(log.createdAt).toISOString().split('T')[0]
+      const date = new Date(log.timestamp).toISOString().split('T')[0]
       if (!logsByUserAndDate[log.userId][date]) {
         logsByUserAndDate[log.userId][date] = []
       }
@@ -776,20 +1046,20 @@ export class UserBehaviorAnalysisService {
     }
 
     // 计算平均会话长度
-    return sessionLengths.length > 0 
-      ? sessionLengths.reduce((sum, length) => sum + length, 0) / sessionLengths.length 
+    return sessionLengths.length > 0
+      ? sessionLengths.reduce((sum, length) => sum + length, 0) / sessionLengths.length
       : 0
   }
 
   /**
    * 获取热门功能
    */
-  private getTopFeatures(userLogs: any[]) {
+  private getTopFeatures(userLogs: UserBehaviorEventLog[]) {
     const featureCounts: Record<string, number> = {}
 
     // 统计每个功能的使用次数
     for (const log of userLogs) {
-      const feature = log.action || '未知'
+      const feature = log.eventType || '未知'
       featureCounts[feature] = (featureCounts[feature] || 0) + 1
     }
 
@@ -809,159 +1079,187 @@ export class UserBehaviorAnalysisService {
    * 获取行为趋势
    */
   private async getBehaviorTrends(startDate: Date, endDate: Date) {
-    // 获取前一个周期的数据
-    const periodLength = endDate.getTime() - startDate.getTime()
-    const previousStartDate = new Date(startDate.getTime() - periodLength)
-    const previousEndDate = new Date(startDate)
-
-    // 获取当前周期的功能使用情况
-    const currentPeriodEvents = await prisma.userBehaviorEvent.findMany({
-      where: {
-        timestamp: {
-          gte: startDate,
-          lte: endDate
-        }
-      }
-    })
-
-    const currentFeatureCounts: Record<string, number> = {}
-    for (const event of currentPeriodEvents) {
-      const feature = event.eventType || '未知'
-      currentFeatureCounts[feature] = (currentFeatureCounts[feature] || 0) + 1
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('UserBehaviorAnalysisService.getBehaviorTrends 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
     }
 
-    // 获取前一个周期的功能使用情况
-    const previousPeriodEvents = await prisma.userBehaviorEvent.findMany({
-      where: {
-        timestamp: {
-          gte: previousStartDate,
-          lte: previousEndDate
+    try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
+      // 获取前一个周期的数据
+      const periodLength = endDate.getTime() - startDate.getTime()
+      const previousStartDate = new Date(startDate.getTime() - periodLength)
+      const previousEndDate = new Date(startDate)
+
+      // 获取当前周期的功能使用情况
+      const currentPeriodEvents = await prisma.userBehaviorEvent.findMany({
+        where: {
+          timestamp: {
+            gte: startDate,
+            lte: endDate
+          }
         }
+      })
+
+      const currentFeatureCounts: Record<string, number> = {}
+      for (const event of currentPeriodEvents) {
+        const feature = event.eventType || '未知'
+        currentFeatureCounts[feature] = (currentFeatureCounts[feature] || 0) + 1
       }
-    })
 
-    const previousFeatureCounts: Record<string, number> = {}
-    for (const event of previousPeriodEvents) {
-      const feature = event.eventType || '未知'
-      previousFeatureCounts[feature] = (previousFeatureCounts[feature] || 0) + 1
-    }
+      // 获取前一个周期的功能使用情况
+      const previousPeriodEvents = await prisma.userBehaviorEvent.findMany({
+        where: {
+          timestamp: {
+            gte: previousStartDate,
+            lte: previousEndDate
+          }
+        }
+      })
 
-    // 计算增长率
-    const growthRates: Array<{ featureName: string; growthRate: number }> = []
-
-    // 获取所有功能的名称
-    const allFeatures = new Set([
-      ...Object.keys(currentFeatureCounts),
-      ...Object.keys(previousFeatureCounts)
-    ])
-
-    for (const feature of allFeatures) {
-      const currentCount = currentFeatureCounts[feature] || 0
-      const previousCount = previousFeatureCounts[feature] || 0
+      const previousFeatureCounts: Record<string, number> = {}
+      for (const event of previousPeriodEvents) {
+        const feature = event.eventType || '未知'
+        previousFeatureCounts[feature] = (previousFeatureCounts[feature] || 0) + 1
+      }
 
       // 计算增长率
-      let growthRate = 0
-      if (previousCount > 0) {
-        growthRate = ((currentCount - previousCount) / previousCount) * 100
-      } else if (currentCount > 0) {
-        growthRate = 100 // 从无到有，增长率为100%
+      const growthRates: Array<{ featureName: string; growthRate: number }> = []
+
+      // 获取所有功能的名称
+      const allFeatures = new Set([
+        ...Object.keys(currentFeatureCounts),
+        ...Object.keys(previousFeatureCounts)
+      ])
+
+      for (const feature of allFeatures) {
+        const currentCount = currentFeatureCounts[feature] || 0
+        const previousCount = previousFeatureCounts[feature] || 0
+
+        // 计算增长率
+        let growthRate = 0
+        if (previousCount > 0) {
+          growthRate = ((currentCount - previousCount) / previousCount) * 100
+        } else if (currentCount > 0) {
+          growthRate = 100 // 从无到有，增长率为100%
+        }
+
+        growthRates.push({
+          featureName: feature,
+          growthRate
+        })
       }
 
-      growthRates.push({
-        featureName: feature,
-        growthRate
-      })
-    }
+      // 分离增长和下降的功能
+      const increasing = growthRates
+        .filter(item => item.growthRate > 10) // 增长率超过10%视为增长
+        .sort((a, b) => b.growthRate - a.growthRate)
 
-    // 分离增长和下降的功能
-    const increasing = growthRates
-      .filter(item => item.growthRate > 10) // 增长率超过10%视为增长
-      .sort((a, b) => b.growthRate - a.growthRate)
+      const decreasing = growthRates
+        .filter(item => item.growthRate < -10) // 下降率超过10%视为下降
+        .sort((a, b) => a.growthRate - b.growthRate)
 
-    const decreasing = growthRates
-      .filter(item => item.growthRate < -10) // 下降率超过10%视为下降
-      .sort((a, b) => a.growthRate - b.growthRate)
-
-    return {
-      increasing,
-      decreasing
+      return {
+        increasing,
+        decreasing
+      }
+    } catch (error) {
+      console.error('获取行为趋势失败:', error)
+      throw new Error('获取行为趋势失败')
     }
   }
 
   /**
    * 计算行为变化
    */
-  private async calculateBehaviorChanges(userId: string, userLogs: any[]) {
-    // 获取用户游戏化开始时间（假设为第一次获得积分的时间）
-    const firstPointTransaction = await prisma.pointTransaction.findFirst({
-      where: {
-        userId,
-        amount: {
-          gt: 0
-        }
-      },
-      orderBy: {
-        createdAt: 'asc'
-      }
-    })
+  private async calculateBehaviorChanges(userId: string, userLogs: UserBehaviorEventLog[]) {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('UserBehaviorAnalysisService.calculateBehaviorChanges 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
 
-    if (!firstPointTransaction) {
-      // 如果没有游戏化记录，返回默认值
+    try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
+      // 获取用户游戏化开始时间（假设为第一次获得积分的时间）
+      const firstPointTransaction = await prisma.pointTransaction.findFirst({
+        where: {
+          userId,
+          amount: {
+            gt: 0
+          }
+        },
+        orderBy: {
+          createdAt: 'asc'
+        }
+      })
+
+      if (!firstPointTransaction) {
+        // 如果没有游戏化记录，返回默认值
+        return {
+          beforeGamification: {
+            sessionFrequency: 0,
+            averageSessionLength: 0,
+            featureDiversity: 0
+          },
+          afterGamification: {
+            sessionFrequency: 0,
+            averageSessionLength: 0,
+            featureDiversity: 0
+          },
+          improvementPercentage: {
+            sessionFrequency: 0,
+            averageSessionLength: 0,
+            featureDiversity: 0
+          }
+        }
+      }
+
+      const gamificationStartDate = new Date(firstPointTransaction.createdAt)
+
+      // 分割游戏化前后的日志
+      const beforeGamificationLogs = userLogs.filter(log => new Date(log.timestamp) < gamificationStartDate)
+      const afterGamificationLogs = userLogs.filter(log => new Date(log.timestamp) >= gamificationStartDate)
+
+      // 计算游戏化前的指标
+      const beforeGamification = this.calculateBehaviorMetrics(beforeGamificationLogs)
+
+      // 计算游戏化后的指标
+      const afterGamification = this.calculateBehaviorMetrics(afterGamificationLogs)
+
+      // 计算改进百分比
+      const improvementPercentage = {
+        sessionFrequency: beforeGamification.sessionFrequency > 0
+          ? ((afterGamification.sessionFrequency - beforeGamification.sessionFrequency) / beforeGamification.sessionFrequency) * 100
+          : 0,
+        averageSessionLength: beforeGamification.averageSessionLength > 0
+          ? ((afterGamification.averageSessionLength - beforeGamification.averageSessionLength) / beforeGamification.averageSessionLength) * 100
+          : 0,
+        featureDiversity: beforeGamification.featureDiversity > 0
+          ? ((afterGamification.featureDiversity - beforeGamification.featureDiversity) / beforeGamification.featureDiversity) * 100
+          : 0
+      }
+
       return {
-        beforeGamification: {
-          sessionFrequency: 0,
-          averageSessionLength: 0,
-          featureDiversity: 0
-        },
-        afterGamification: {
-          sessionFrequency: 0,
-          averageSessionLength: 0,
-          featureDiversity: 0
-        },
-        improvementPercentage: {
-          sessionFrequency: 0,
-          averageSessionLength: 0,
-          featureDiversity: 0
-        }
+        beforeGamification,
+        afterGamification,
+        improvementPercentage
       }
-    }
-
-    const gamificationStartDate = new Date(firstPointTransaction.createdAt)
-
-    // 分割游戏化前后的日志
-    const beforeGamificationLogs = userLogs.filter(log => new Date(log.createdAt) < gamificationStartDate)
-    const afterGamificationLogs = userLogs.filter(log => new Date(log.createdAt) >= gamificationStartDate)
-
-    // 计算游戏化前的指标
-    const beforeGamification = this.calculateBehaviorMetrics(beforeGamificationLogs)
-
-    // 计算游戏化后的指标
-    const afterGamification = this.calculateBehaviorMetrics(afterGamificationLogs)
-
-    // 计算改进百分比
-    const improvementPercentage = {
-      sessionFrequency: beforeGamification.sessionFrequency > 0 
-        ? ((afterGamification.sessionFrequency - beforeGamification.sessionFrequency) / beforeGamification.sessionFrequency) * 100 
-        : 0,
-      averageSessionLength: beforeGamification.averageSessionLength > 0 
-        ? ((afterGamification.averageSessionLength - beforeGamification.averageSessionLength) / beforeGamification.averageSessionLength) * 100 
-        : 0,
-      featureDiversity: beforeGamification.featureDiversity > 0 
-        ? ((afterGamification.featureDiversity - beforeGamification.featureDiversity) / beforeGamification.featureDiversity) * 100 
-        : 0
-    }
-
-    return {
-      beforeGamification,
-      afterGamification,
-      improvementPercentage
+    } catch (error) {
+      console.error('计算行为变化失败:', error)
+      throw new Error('计算行为变化失败')
     }
   }
 
   /**
    * 计算行为指标
    */
-  private calculateBehaviorMetrics(userLogs: any[]) {
+  private calculateBehaviorMetrics(userLogs: UserBehaviorEventLog[]) {
     if (userLogs.length === 0) {
       return {
         sessionFrequency: 0,
@@ -971,10 +1269,10 @@ export class UserBehaviorAnalysisService {
     }
 
     // 按日期分组日志
-    const logsByDate: Record<string, any[]> = {}
+    const logsByDate: Record<string, UserBehaviorEventLog[]> = {}
     
     for (const log of userLogs) {
-      const date = new Date(log.createdAt).toISOString().split('T')[0]
+      const date = new Date(log.timestamp).toISOString().split('T')[0]
       if (!logsByDate[date]) {
         logsByDate[date] = []
       }
@@ -991,7 +1289,7 @@ export class UserBehaviorAnalysisService {
     const averageSessionLength = sessionCount > 0 ? totalSessionLength / sessionCount : 0
 
     // 计算功能多样性（不同功能的使用数量）
-    const uniqueFeatures = new Set(userLogs.map(log => log.action || '未知'))
+    const uniqueFeatures = new Set(userLogs.map(log => log.eventType || '未知'))
     const featureDiversity = uniqueFeatures.size
 
     return {
@@ -1018,7 +1316,7 @@ export class UserBehaviorAnalysisService {
    */
   private calculatePredictiveInsights(
     userBehaviorEvents: UserBehaviorEventLog[],
-    reviews: any[]
+    reviews: Review[]
   ) {
     // 计算流失风险
     const churnRiskFactors = []

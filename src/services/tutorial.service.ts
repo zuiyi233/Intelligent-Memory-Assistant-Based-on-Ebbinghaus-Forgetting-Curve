@@ -1,4 +1,7 @@
-import { prisma, isPrismaInitialized } from '@/lib/db'
+import { isPrismaInitialized } from '@/lib/db'
+
+// 检查是否在服务端环境
+const isServerSide = typeof window === 'undefined'
 import {
   Tutorial,
   TutorialStep,
@@ -28,7 +31,16 @@ export class TutorialService {
     limit: number
     totalPages: number
   }> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('TutorialService.getAllTutorials 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
       const {
         category,
         audience,
@@ -114,7 +126,16 @@ export class TutorialService {
    * 获取教程详情
    */
   async getTutorialById(id: string): Promise<Tutorial | null> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('TutorialService.getTutorialById 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
       const tutorial = await prisma.tutorial.findUnique({
         where: { id },
         include: {
@@ -151,7 +172,16 @@ export class TutorialService {
     prerequisites?: string[]
     steps: Omit<TutorialStep, 'id' | 'tutorialId'>[]
   }): Promise<Tutorial> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('TutorialService.createTutorial 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
       const { steps, ...tutorialData } = data
 
       // 创建教程
@@ -209,7 +239,16 @@ export class TutorialService {
       prerequisites?: string[]
     }
   ): Promise<Tutorial> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('TutorialService.updateTutorial 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
       const tutorial = await prisma.tutorial.update({
         where: { id },
         data,
@@ -236,7 +275,16 @@ export class TutorialService {
    * 删除教程
    */
   async deleteTutorial(id: string): Promise<void> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('TutorialService.deleteTutorial 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
       await prisma.tutorial.delete({
         where: { id }
       })
@@ -250,7 +298,16 @@ export class TutorialService {
    * 获取用户的教程进度
    */
   async getUserTutorialProgress(userId: string, tutorialId?: string): Promise<UserTutorialProgress[]> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('TutorialService.getUserTutorialProgress 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
       const where: Record<string, unknown> = { userId }
       
       if (tutorialId) {
@@ -282,7 +339,16 @@ export class TutorialService {
    * 获取或创建用户教程进度
    */
   async getOrCreateUserTutorialProgress(userId: string, tutorialId: string): Promise<UserTutorialProgress> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('TutorialService.getOrCreateUserTutorialProgress 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
       let progress = await prisma.userTutorialProgress.findUnique({
         where: {
           userId_tutorialId: {
@@ -366,6 +432,9 @@ export class TutorialService {
       if (data.status === 'IN_PROGRESS' && existingProgress.status === 'NOT_STARTED') {
         updateData.startedAt = new Date()
       }
+
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
 
       const updatedProgress = await prisma.userTutorialProgress.update({
         where: {
@@ -546,7 +615,16 @@ export class TutorialService {
    * 获取教程统计
    */
   async getTutorialStats(userId?: string): Promise<TutorialStats> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('TutorialService.getTutorialStats 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
       const [
         totalTutorials,
         userProgressList,
@@ -757,7 +835,16 @@ export class TutorialService {
       suggestions?: string
     }
   ): Promise<TutorialFeedback> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('TutorialService.submitTutorialFeedback 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
       const feedback = await prisma.tutorialFeedback.create({
         data: {
           userId,
@@ -777,7 +864,16 @@ export class TutorialService {
    * 初始化默认教程
    */
   async initializeDefaultTutorials(): Promise<void> {
+    // 检查是否在服务端环境且 Prisma 已初始化
+    if (!isServerSide || !isPrismaInitialized()) {
+      console.error('TutorialService.initializeDefaultTutorials 只能在服务端运行')
+      throw new Error('此方法只能在服务端运行')
+    }
+
     try {
+      // 动态导入 Prisma，避免在客户端打包
+      const { prisma } = await import('@/lib/db')
+
       const defaultTutorials = [
         {
           name: '游戏化系统入门',

@@ -1,13 +1,12 @@
-import { ExtendedUserBehaviorEventType, ExtendedLearningContentType, UserBehaviorAnalysisService } from './userBehaviorAnalysis.service'
-import { prisma } from '@/lib/db'
+import { ExtendedUserBehaviorEventType, ExtendedLearningContentType } from './userBehaviorAnalysis.service'
 
 /**
  * 用户行为数据收集服务
  * 负责收集、记录和处理用户行为事件
+ * 注意：此服务在客户端运行，通过 API 路由与服务端通信
  */
 export class UserBehaviorDataCollectionService {
   private static instance: UserBehaviorDataCollectionService
-  private behaviorAnalysisService: UserBehaviorAnalysisService
   private eventQueue: Array<{
     userId: string
     eventType: ExtendedUserBehaviorEventType
@@ -24,9 +23,17 @@ export class UserBehaviorDataCollectionService {
   }> = []
   private isProcessing = false
   private batchSize = 10
+  private isClientSide: boolean
 
   private constructor() {
-    this.behaviorAnalysisService = new UserBehaviorAnalysisService()
+    // 检查是否在客户端运行
+    this.isClientSide = typeof window !== 'undefined'
+    
+    if (!this.isClientSide) {
+      console.error('UserBehaviorDataCollectionService 应该只在客户端运行')
+      return
+    }
+    
     // 启动定时处理队列
     setInterval(() => this.processEventQueue(), 5000) // 每5秒处理一次队列
   }
@@ -131,20 +138,61 @@ export class UserBehaviorDataCollectionService {
       // 取出队列中的事件
       const eventsToProcess = this.eventQueue.splice(0, this.batchSize)
       
-      // 使用批量处理提高性能
-      await this.behaviorAnalysisService.batchRecordUserBehaviorEvents(
-        eventsToProcess.map(event => ({
-          userId: event.userId,
-          eventType: event.eventType,
-          data: event.data
-        }))
-      )
+      // 通过 API 路由发送事件到服务端
+      await this.sendEventsToServer(eventsToProcess)
 
       console.log(`成功处理 ${eventsToProcess.length} 个用户行为事件`)
     } catch (error) {
       console.error('处理用户行为事件队列失败:', error)
     } finally {
       this.isProcessing = false
+    }
+  }
+
+  /**
+   * 将事件发送到服务端 API
+   */
+  private async sendEventsToServer(events: Array<{
+    userId: string
+    eventType: ExtendedUserBehaviorEventType
+    data?: {
+      contentType?: ExtendedLearningContentType
+      categoryId?: string
+      timeSpent?: number
+      accuracy?: number
+      difficulty?: number
+      success?: boolean
+      metadata?: Record<string, unknown>
+    }
+    timestamp: Date
+  }>): Promise<void> {
+    try {
+      const response = await fetch('/api/user-behavior/record', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          events: events.map(event => ({
+            userId: event.userId,
+            eventType: event.eventType,
+            data: event.data,
+            timestamp: event.timestamp.toISOString()
+          }))
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const result = await response.json()
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to record user behavior events')
+      }
+    } catch (error) {
+      console.error('发送用户行为事件到服务端失败:', error)
+      throw error
     }
   }
 

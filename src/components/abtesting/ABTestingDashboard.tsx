@@ -12,7 +12,7 @@ import {
   ChartBarIcon,
   DocumentTextIcon,
   CogIcon,
-  TrendingUpIcon,
+  ArrowTrendingUpIcon,
   UsersIcon,
   LightBulbIcon,
   RocketLaunchIcon
@@ -287,7 +287,7 @@ export const ABTestingDashboard: React.FC<ABTestingDashboardProps> = ({
             <QuickActionCard
               title="数据分析"
               description="查看测试结果和统计分析"
-              icon={TrendingUpIcon}
+              icon={ArrowTrendingUpIcon}
               onClick={onViewAnalytics}
               color="purple"
             />
@@ -358,7 +358,7 @@ export const ABTestingDashboard: React.FC<ABTestingDashboardProps> = ({
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <TrendingUpIcon className="h-5 w-5 text-green-500" />
+                      <ArrowTrendingUpIcon className="h-5 w-5 text-green-500" />
                       关键发现
                     </CardTitle>
                   </CardHeader>
